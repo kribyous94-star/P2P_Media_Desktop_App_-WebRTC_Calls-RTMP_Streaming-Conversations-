@@ -1,7 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import fastifyWebsocket from "@fastify/websocket";
-import fastifyJwt from "@fastify/jwt";
 
 import { env } from "./config/env.js";
 import { wsHandler } from "./websocket/handler.js";
@@ -21,10 +20,6 @@ const app = Fastify({
 await app.register(cors, {
   origin: env.ALLOWED_ORIGINS.split(","),
   credentials: true,
-});
-
-await app.register(fastifyJwt, {
-  secret: env.JWT_SECRET,
 });
 
 await app.register(fastifyWebsocket);
