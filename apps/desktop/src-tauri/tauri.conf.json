@@ -40,9 +40,7 @@
   },
   "plugins": {
     "shell": {
-      "open": false,
-      "sidecar": false,
-      "scope": []
+      "open": false
     }
   }
 }
