@@ -1,7 +1,7 @@
 import { eq, and, lt, desc } from "drizzle-orm";
 import { db } from "../../db/index.js";
 import { messages, users, conversationMembers } from "../../db/schema.js";
-import { hasPermission, getEffectivePermissions } from "../conversations/conversations.service.js";
+import { hasPermission } from "../conversations/conversations.service.js";
 import type { Message } from "@p2p/shared";
 
 const PAGE_SIZE = 50;
@@ -80,8 +80,7 @@ export async function createMessage(
   type: "text" = "text"
 ): Promise<Message> {
   // Check permission
-  const perms = await getEffectivePermissions(conversationId, authorId);
-  if (!hasPermission(perms, "send_message")) {
+  if (!(await hasPermission(conversationId, authorId, "send_message"))) {
     throw new Error("FORBIDDEN");
   }
 
