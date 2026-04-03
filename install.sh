@@ -162,13 +162,9 @@ install_node() {
     log_ok "nvm installé : $(nvm --version)"
   fi
 
-  if nvm list | grep -q "v${NODE_REQUIRED}"; then
-    log_ok "Node.js $NODE_REQUIRED déjà disponible."
-  else
-    log_info "Installation de Node.js $NODE_REQUIRED..."
-    nvm install "$NODE_REQUIRED"
-  fi
-
+  # nvm install est idempotent : si la version est déjà installée, elle est juste activée
+  log_info "Installation/activation de Node.js $NODE_REQUIRED..."
+  nvm install "$NODE_REQUIRED"
   nvm use "$NODE_REQUIRED"
   nvm alias default "$NODE_REQUIRED"
   log_ok "Node.js actif : $(node --version) | npm : $(npm --version)"
