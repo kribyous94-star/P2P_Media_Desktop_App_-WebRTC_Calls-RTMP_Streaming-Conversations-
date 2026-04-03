@@ -187,6 +187,63 @@ install_node_deps() {
 
   npm install
   log_ok "Dépendances Node installées."
+
+  # Vérification des peer dependencies critiques
+  verify_peer_deps
+}
+
+# Vérifie que les plugins Fastify sont compatibles avec la version installée
+verify_peer_deps() {
+  log_section "Vérification des compatibilités"
+
+  local FASTIFY_VERSION
+  FASTIFY_VERSION=$(node -e "console.log(require('./node_modules/fastify/package.json').version)" 2>/dev/null || echo "")
+
+  if [[ -z "$FASTIFY_VERSION" ]]; then
+    log_warn "Impossible de lire la version de Fastify — vérification ignorée."
+    return
+  fi
+
+  local FASTIFY_MAJOR
+  FASTIFY_MAJOR=$(echo "$FASTIFY_VERSION" | cut -d. -f1)
+  log_info "Fastify détecté : v${FASTIFY_VERSION}"
+
+  local ERRORS=0
+
+  # Liste des plugins à vérifier : "paquet|version_majeure_minimale_requise"
+  local PLUGINS=(
+    "@fastify/cors|10"
+    "@fastify/websocket|11"
+  )
+
+  for entry in "${PLUGINS[@]}"; do
+    local PKG="${entry%%|*}"
+    local MIN_MAJOR="${entry##*|}"
+    local PKG_PATH="node_modules/${PKG}/package.json"
+
+    if [[ ! -f "$PKG_PATH" ]]; then
+      log_warn "${PKG} non trouvé dans node_modules — ignoré."
+      continue
+    fi
+
+    local PKG_VERSION
+    PKG_VERSION=$(node -e "console.log(require('./${PKG_PATH}').version)" 2>/dev/null || echo "")
+    local PKG_MAJOR
+    PKG_MAJOR=$(echo "$PKG_VERSION" | cut -d. -f1)
+
+    if [[ "$PKG_MAJOR" -lt "$MIN_MAJOR" ]]; then
+      log_error "${PKG}@${PKG_VERSION} est incompatible avec Fastify ${FASTIFY_MAJOR} (requis : v${MIN_MAJOR}+)"
+      ERRORS=$((ERRORS + 1))
+    else
+      log_ok "${PKG}@${PKG_VERSION} compatible avec Fastify ${FASTIFY_MAJOR}."
+    fi
+  done
+
+  if [[ "$ERRORS" -gt 0 ]]; then
+    log_error "$ERRORS incompatibilité(s) détectée(s). Le serveur ne démarrera pas."
+    log_error "Vérifiez apps/server/package.json et relancez ./install.sh"
+    exit 1
+  fi
 }
 
 # =============================================================================
