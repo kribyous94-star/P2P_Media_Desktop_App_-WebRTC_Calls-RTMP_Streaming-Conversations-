@@ -6,6 +6,8 @@ build/
 
 # Tauri
 apps/desktop/src-tauri/target/
+# Icônes générées par install.sh (binaires, non versionnées)
+apps/desktop/src-tauri/icons/
 
 # Environment
 .env

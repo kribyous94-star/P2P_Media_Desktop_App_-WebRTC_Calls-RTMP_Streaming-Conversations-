@@ -263,7 +263,7 @@ setup_env() {
 }
 
 # =============================================================================
-# Tauri CLI
+# Tauri CLI + Icônes
 # =============================================================================
 
 install_tauri_cli() {
@@ -276,6 +276,58 @@ install_tauri_cli() {
     log_ok "Tauri CLI disponible via npx."
   else
     log_warn "Tauri CLI sera disponible via : cd apps/desktop && npx tauri"
+  fi
+}
+
+generate_tauri_icons() {
+  log_section "Icônes Tauri"
+
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  ICONS_DIR="$SCRIPT_DIR/apps/desktop/src-tauri/icons"
+
+  # Si toutes les icônes nécessaires existent déjà, on passe
+  if [[ -f "$ICONS_DIR/32x32.png" && -f "$ICONS_DIR/128x128.png" && -f "$ICONS_DIR/icon.ico" ]]; then
+    log_ok "Icônes Tauri déjà présentes."
+    return
+  fi
+
+  mkdir -p "$ICONS_DIR"
+
+  # Générer une image source 1024x1024 avec Python3 (toujours disponible sur Ubuntu)
+  log_info "Génération de l'image source (1024x1024)..."
+  local SRC_PNG="$ICONS_DIR/_source.png"
+
+  python3 - "$SRC_PNG" <<'PYEOF'
+import struct, zlib, sys
+
+def make_png(w, h, r=108, g=99, b=255):
+    def chunk(tag, data):
+        buf = tag + data
+        return struct.pack('>I', len(data)) + buf + struct.pack('>I', zlib.crc32(buf) & 0xffffffff)
+    sig = b'\x89PNG\r\n\x1a\n'
+    ihdr = chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+    raw = b''.join(b'\x00' + bytes([r, g, b]) * w for _ in range(h))
+    idat = chunk(b'IDAT', zlib.compress(raw, 9))
+    iend = chunk(b'IEND', b'')
+    return sig + ihdr + idat + iend
+
+with open(sys.argv[1], 'wb') as f:
+    f.write(make_png(1024, 1024))
+PYEOF
+
+  log_info "Génération de toutes les icônes via Tauri CLI..."
+  cd "$SCRIPT_DIR/apps/desktop"
+  npx --yes @tauri-apps/cli@^2 icon "$SRC_PNG" --output "$ICONS_DIR" 2>&1 | grep -v "^$" || true
+  cd "$SCRIPT_DIR"
+
+  # Nettoyage de l'image source temporaire
+  rm -f "$SRC_PNG"
+
+  if [[ -f "$ICONS_DIR/32x32.png" ]]; then
+    log_ok "Icônes Tauri générées dans src-tauri/icons/"
+  else
+    log_warn "Génération des icônes incomplète — le build Tauri pourrait échouer."
+    log_warn "Relancez : cd apps/desktop && npx tauri icon <votre-logo.png>"
   fi
 }
 
@@ -327,6 +379,7 @@ main() {
   install_node_deps
   setup_env
   install_tauri_cli
+  generate_tauri_icons
   print_summary
 }
 
