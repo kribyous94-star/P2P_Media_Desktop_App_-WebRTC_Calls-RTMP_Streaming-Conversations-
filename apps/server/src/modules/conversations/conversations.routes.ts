@@ -15,6 +15,7 @@ import {
   updateMemberRole,
   kickMember,
   updateConversationPermissions,
+  addMemberByUsername,
   ConversationError,
 } from "./conversations.service.js";
 
@@ -64,6 +65,21 @@ export async function conversationRoutes(app: FastifyInstance) {
       return reply.send({ members });
     } catch (err) { return handleError(err, reply); }
   });
+
+  // POST /api/conversations/:id/members  { username } — ajouter un membre par username
+  app.post<{ Params: { id: string }; Body: { username: string } }>(
+    "/:id/members",
+    async (request, reply) => {
+      const { username } = request.body ?? {};
+      if (!username || typeof username !== "string") {
+        return reply.code(400).send({ error: "username requis" });
+      }
+      try {
+        const conv = await addMemberByUsername(request.params.id, getUserId(request), username.trim());
+        return reply.code(201).send({ conversation: conv });
+      } catch (err) { return handleError(err, reply); }
+    }
+  );
 
   // POST /api/conversations/:id/join
   app.post<{ Params: { id: string } }>("/:id/join", async (request, reply) => {

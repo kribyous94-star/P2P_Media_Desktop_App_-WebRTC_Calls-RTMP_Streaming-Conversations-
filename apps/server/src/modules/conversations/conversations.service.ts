@@ -4,6 +4,7 @@ import {
   conversations,
   conversationMembers,
   conversationPermissions,
+  users,
 } from "../../db/schema.js";
 import { DEFAULT_PERMISSIONS, type Permission, type UserRole } from "@p2p/shared";
 import type { CreateConversationInput, UpdateRoleInput, UpdatePermissionsInput } from "./conversations.schema.js";
@@ -169,6 +170,27 @@ export async function joinConversation(conversationId: string, userId: string) {
   });
 
   return toPublicConversation(conv, "member");
+}
+
+export async function addMemberByUsername(
+  conversationId: string,
+  requestingUserId: string,
+  targetUsername: string
+) {
+  if (!(await hasPermission(conversationId, requestingUserId, "invite"))) {
+    throw new ConversationError("Permission refusée : invite", 403);
+  }
+
+  const [target] = await db
+    .select({ id: users.id, username: users.username, displayName: users.displayName })
+    .from(users)
+    .where(eq(users.username, targetUsername))
+    .limit(1);
+
+  if (!target) throw new ConversationError("Utilisateur introuvable", 404);
+
+  // joinConversation handles the "already member" check
+  return joinConversation(conversationId, target.id);
 }
 
 export async function leaveConversation(conversationId: string, userId: string) {

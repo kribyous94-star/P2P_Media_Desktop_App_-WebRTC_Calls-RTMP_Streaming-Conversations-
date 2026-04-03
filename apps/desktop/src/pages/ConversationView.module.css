@@ -11,6 +11,85 @@
   flex-shrink: 0;
 }
 
+/* ---- Add member ---- */
+.addMemberWrapper {
+  position: relative;
+  margin-left: auto;
+}
+
+.addMemberBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+  padding: 0.25rem 0.375rem;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+}
+.addMemberBtn:hover {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.addMemberPopover {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  width: 240px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
+
+.popoverLabel {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.popoverRow {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.popoverInput {
+  flex: 1;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.375rem 0.625rem;
+  color: var(--color-text);
+  font-size: 0.875rem;
+  outline: none;
+}
+.popoverInput:focus { border-color: var(--color-primary); }
+
+.popoverBtn {
+  background: var(--color-primary);
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.375rem 0.625rem;
+  cursor: pointer;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.popoverBtn:hover:not(:disabled) { background: var(--color-primary-hover); }
+.popoverBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.popoverError {
+  font-size: 0.75rem;
+  color: var(--color-danger);
+}
+
 .header {
   display: flex;
   align-items: center;
