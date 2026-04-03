@@ -200,13 +200,9 @@ setup_env() {
   ENV_FILE="$SCRIPT_DIR/apps/server/.env"
   ENV_EXAMPLE="$SCRIPT_DIR/apps/server/.env.example"
 
-  if [[ -f "$ENV_FILE" ]]; then
-    log_warn ".env déjà présent — non écrasé."
-  else
-    cp "$ENV_EXAMPLE" "$ENV_FILE"
-    log_ok ".env créé depuis .env.example"
-    log_warn "Pensez à éditer apps/server/.env (JWT_SECRET, DATABASE_URL)"
-  fi
+  cp "$ENV_EXAMPLE" "$ENV_FILE"
+  log_ok ".env (re)créé depuis .env.example"
+  log_warn "Pensez à éditer apps/server/.env (JWT_SECRET, DATABASE_URL)"
 }
 
 # =============================================================================
