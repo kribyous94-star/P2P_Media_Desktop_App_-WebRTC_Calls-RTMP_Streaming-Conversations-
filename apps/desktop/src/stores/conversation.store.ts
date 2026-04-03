@@ -73,3 +73,11 @@ export const useConversationStore = create<ConversationState>()((set, get) => ({
     });
   },
 }));
+
+// Re-join the active conversation each time the WS authenticates successfully.
+// Fixes the race condition where setActive() fires before the WS is connected
+// (page reload, new tab with persisted token).
+useWsStore.getState().on("auth:success", () => {
+  const { activeId, joinRoom } = useConversationStore.getState();
+  if (activeId) joinRoom(activeId);
+});
