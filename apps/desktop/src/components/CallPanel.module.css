@@ -1,0 +1,181 @@
+/* ---- Idle bar ---- */
+.idleBar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.callBtn {
+  background: #22c55e;
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.5rem 1.25rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background 0.15s;
+}
+.callBtn:hover { background: #16a34a; }
+
+/* ---- Incoming overlay ---- */
+.incomingOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.incomingBox {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 2rem 2.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.incomingTitle {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.incomingFrom {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.incomingActions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.rejectBtn {
+  background: var(--color-danger);
+  border: none;
+  color: #fff;
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  cursor: pointer;
+  font-size: 1.25rem;
+  transition: background 0.15s;
+}
+.rejectBtn:hover { filter: brightness(0.85); }
+
+.acceptBtn {
+  background: #22c55e;
+  border: none;
+  color: #fff;
+  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  cursor: pointer;
+  font-size: 1.25rem;
+  transition: background 0.15s;
+}
+.acceptBtn:hover { filter: brightness(0.85); }
+
+/* ---- Active call view ---- */
+.callView {
+  position: relative;
+  flex-shrink: 0;
+  height: 280px;
+  background: #000;
+  overflow: hidden;
+}
+
+.remoteWrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.remoteVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.waitingOverlay {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.waitingIcon {
+  font-size: 3rem;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.15); opacity: 0.7; }
+}
+
+.localVideo {
+  position: absolute;
+  bottom: 0.75rem;
+  right: 0.75rem;
+  width: 120px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  z-index: 10;
+}
+
+/* ---- Controls ---- */
+.controls {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 12px 12px 0 0;
+  z-index: 20;
+}
+
+.ctrlBtn {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0.5rem 0.875rem;
+  cursor: pointer;
+  font-size: 1.1rem;
+  transition: background 0.15s;
+}
+.ctrlBtn:hover { background: rgba(255, 255, 255, 0.25); }
+
+.ctrlOff {
+  background: rgba(255, 50, 50, 0.25);
+  border-color: rgba(255, 50, 50, 0.4);
+}
+
+.hangUpBtn {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.hangUpBtn:hover { filter: brightness(0.85); }

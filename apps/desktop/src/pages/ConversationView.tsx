@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useConversationStore } from "@/stores/conversation.store.js";
 import ChatPanel from "@/components/ChatPanel.js";
+import CallPanel from "@/components/CallPanel.js";
 import styles from "./ConversationView.module.css";
 
 export default function ConversationView() {
@@ -29,10 +30,16 @@ export default function ConversationView() {
         <span className={styles.role}>{conv.userRole}</span>
       </div>
 
+      {/* Phase 5 : WebRTC — appels 1:1 (private + media_room) */}
+      {(conv.type === "private" || conv.type === "media_room") && (
+        <div className={styles.callWrapper}>
+          <CallPanel conversationId={conv.id} />
+        </div>
+      )}
+
       {/* Phase 4 : Chat texte */}
       <ChatPanel conversationId={conv.id} />
 
-      {/* Phase 5 : WebRTC */}
       {/* Phase 7 : RTMP */}
     </div>
   );

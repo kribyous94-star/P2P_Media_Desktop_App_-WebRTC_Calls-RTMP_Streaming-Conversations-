@@ -19,7 +19,7 @@ export async function handleChatMessage(
   }
 
   // Verify the user is in the WS room for this conversation
-  if (!connectionRegistry.getConversations(connectionId).has(conversationId)) {
+  if (!connectionRegistry.getConversations(connectionId).includes(conversationId)) {
     socket.send(JSON.stringify({
       type: "error",
       payload: { code: "NOT_IN_ROOM", message: "Join the conversation first" },
