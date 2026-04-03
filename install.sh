@@ -102,15 +102,33 @@ install_system_deps() {
 install_rust() {
   log_section "Rust & Cargo"
 
-  if command -v rustc &>/dev/null; then
-    RUST_VERSION=$(rustc --version)
-    log_ok "Rust déjà installé : $RUST_VERSION"
-    log_info "Mise à jour de Rust..."
+  # Charger rustup/cargo s'ils sont déjà installés via rustup (pas via apt)
+  if [[ -f "$HOME/.cargo/env" ]]; then
+    # shellcheck source=/dev/null
+    source "$HOME/.cargo/env"
+  fi
+
+  if command -v rustup &>/dev/null; then
+    # rustup est présent — mise à jour simple
+    log_ok "rustup déjà installé : $(rustup --version 2>&1 | head -1)"
+    log_info "Mise à jour vers stable..."
     rustup update stable
+    log_ok "Rust : $(rustc --version)"
+
+  elif command -v rustc &>/dev/null; then
+    # rustc présent MAIS installé via apt — pas de rustup
+    log_warn "Rust détecté via apt ($(rustc --version)), mais rustup est absent."
+    log_warn "apt-Rust est limité (pas de gestion de toolchains, version souvent ancienne)."
+    log_info "Installation de rustup par-dessus (le toolchain apt restera disponible)..."
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --no-modify-path
+    # shellcheck source=/dev/null
+    source "$HOME/.cargo/env"
+    log_ok "rustup installé. Rust actif : $(rustc --version)"
+
   else
+    # Rien du tout — installation from scratch
     log_info "Installation de Rust via rustup..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-    # Charger Rust dans le PATH pour la suite du script
     # shellcheck source=/dev/null
     source "$HOME/.cargo/env"
     log_ok "Rust installé : $(rustc --version)"
