@@ -247,19 +247,102 @@ verify_peer_deps() {
 }
 
 # =============================================================================
-# Configuration de l'environnement serveur
+# Configuration de l'environnement serveur (interactive)
 # =============================================================================
 
-setup_env() {
+configure_env() {
   log_section "Configuration de l'environnement"
 
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  ENV_FILE="$SCRIPT_DIR/apps/server/.env"
-  ENV_EXAMPLE="$SCRIPT_DIR/apps/server/.env.example"
+  local ENV_FILE="$SCRIPT_DIR/apps/server/.env"
 
-  cp "$ENV_EXAMPLE" "$ENV_FILE"
-  log_ok ".env (re)créé depuis .env.example"
-  log_warn "Pensez à éditer apps/server/.env (JWT_SECRET, DATABASE_URL)"
+  # ---- Valeurs courantes (pour les re-runs) ----
+  local CUR_DB_HOST="localhost" CUR_DB_PORT="5432" CUR_DB_NAME="p2p_media"
+  local CUR_DB_USER="p2p"      CUR_DB_PASS=""      CUR_JWT_SECRET=""
+
+  if [[ -f "$ENV_FILE" ]]; then
+    local EXISTING_URL
+    EXISTING_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+    if [[ -n "$EXISTING_URL" ]]; then
+      CUR_DB_USER=$(echo "$EXISTING_URL" | sed 's|postgresql://\([^:]*\):.*|\1|')
+      CUR_DB_PASS=$(echo "$EXISTING_URL" | sed 's|postgresql://[^:]*:\([^@]*\)@.*|\1|')
+      CUR_DB_HOST=$(echo "$EXISTING_URL" | sed 's|.*@\([^:/]*\)[:/].*|\1|')
+      CUR_DB_PORT=$(echo "$EXISTING_URL" | sed 's|.*:\([0-9]*\)/.*|\1|')
+      CUR_DB_NAME=$(echo "$EXISTING_URL" | sed 's|.*/\([^?]*\).*|\1|')
+    fi
+    CUR_JWT_SECRET=$(grep "^JWT_SECRET=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+  fi
+
+  # ---- Prompts interactifs ----
+  echo -e "${BOLD}  Configuration PostgreSQL${NC}  (Entrée = valeur par défaut)"
+  echo ""
+
+  local DB_HOST DB_PORT DB_NAME DB_USER DB_PASS JWT_SECRET
+  read -rp "  Hôte          [${CUR_DB_HOST}] : " DB_HOST;  DB_HOST="${DB_HOST:-$CUR_DB_HOST}"
+  read -rp "  Port          [${CUR_DB_PORT}] : " DB_PORT;  DB_PORT="${DB_PORT:-$CUR_DB_PORT}"
+  read -rp "  Base de données [${CUR_DB_NAME}] : " DB_NAME; DB_NAME="${DB_NAME:-$CUR_DB_NAME}"
+  read -rp "  Utilisateur   [${CUR_DB_USER}] : " DB_USER;  DB_USER="${DB_USER:-$CUR_DB_USER}"
+
+  # Mot de passe — obligatoire, jamais vide
+  while true; do
+    if [[ -n "$CUR_DB_PASS" ]]; then
+      read -rsp "  Mot de passe  [Entrée = conserver l'actuel] : " DB_PASS; echo ""
+      [[ -z "$DB_PASS" ]] && DB_PASS="$CUR_DB_PASS"
+    else
+      read -rsp "  Mot de passe  (requis) : " DB_PASS; echo ""
+    fi
+    [[ -n "$DB_PASS" ]] && break
+    log_warn "Le mot de passe ne peut pas être vide."
+  done
+
+  # JWT_SECRET — auto-généré si absent ou placeholder
+  local IS_PLACEHOLDER=false
+  [[ "$CUR_JWT_SECRET" == "super-secret-jwt-key-change-in-production" || -z "$CUR_JWT_SECRET" ]] \
+    && IS_PLACEHOLDER=true
+
+  local DEFAULT_JWT
+  if $IS_PLACEHOLDER; then
+    DEFAULT_JWT=$(openssl rand -hex 32 2>/dev/null \
+      || python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null \
+      || tr -dc 'a-f0-9' </dev/urandom | head -c 64)
+  else
+    DEFAULT_JWT="$CUR_JWT_SECRET"
+  fi
+
+  echo ""
+  echo -e "  ${BOLD}JWT Secret${NC}"
+  if $IS_PLACEHOLDER; then
+    echo -e "  ${BLUE}[auto-généré]${NC} ${DEFAULT_JWT}"
+    read -rp "  Remplacer ? [Entrée = garder celui-ci] : " JWT_SECRET
+  else
+    read -rp "  JWT_SECRET [Entrée = conserver l'actuel] : " JWT_SECRET
+  fi
+  JWT_SECRET="${JWT_SECRET:-$DEFAULT_JWT}"
+
+  # ---- Écriture du .env ----
+  local DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
+  cat > "$ENV_FILE" <<ENVEOF
+NODE_ENV=development
+PORT=3001
+HOST=0.0.0.0
+
+JWT_SECRET=${JWT_SECRET}
+JWT_EXPIRY=7d
+
+DATABASE_URL=${DATABASE_URL}
+
+ALLOWED_ORIGINS=http://localhost:1420
+ENVEOF
+
+  log_ok ".env configuré : ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+
+  # Exporter pour install_postgres
+  export _DB_USER="$DB_USER"
+  export _DB_PASS="$DB_PASS"
+  export _DB_HOST="$DB_HOST"
+  export _DB_PORT="$DB_PORT"
+  export _DB_NAME="$DB_NAME"
 }
 
 # =============================================================================
@@ -351,39 +434,54 @@ install_postgres() {
   # S'assurer que PostgreSQL est démarré
   sudo systemctl start postgresql 2>/dev/null || true
 
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  local ENV_FILE="$SCRIPT_DIR/apps/server/.env"
-
-  # Lire les infos de connexion depuis le .env existant
-  if [[ -f "$ENV_FILE" ]]; then
-    local DB_URL
-    DB_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2-)
-    local DB_USER DB_PASS DB_NAME
-    DB_USER=$(echo "$DB_URL" | sed 's|postgresql://\([^:]*\):.*|\1|')
-    DB_PASS=$(echo "$DB_URL" | sed 's|postgresql://[^:]*:\([^@]*\)@.*|\1|')
-    DB_NAME=$(echo "$DB_URL" | sed 's|.*/\([^?]*\).*|\1|')
-  else
-    # Valeurs par défaut si pas encore de .env
-    DB_USER="postgres"; DB_PASS=""; DB_NAME="p2p_media"
-  fi
+  # Récupérer les variables exportées par configure_env
+  local DB_USER="${_DB_USER:-p2p}"
+  local DB_PASS="${_DB_PASS:-}"
+  local DB_HOST="${_DB_HOST:-localhost}"
+  local DB_NAME="${_DB_NAME:-p2p_media}"
 
   log_info "Configuration de la base '${DB_NAME}' (user: ${DB_USER})..."
 
+  # Créer le rôle PostgreSQL s'il n'existe pas (en tant que postgres)
+  sudo -u postgres psql -tc \
+    "SELECT 1 FROM pg_roles WHERE rolname='${DB_USER}'" 2>/dev/null \
+    | grep -q 1 || sudo -u postgres psql -c \
+    "CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';" 2>/dev/null \
+    && log_ok "Rôle '${DB_USER}' présent." || true
+
+  # Mettre à jour le mot de passe si le rôle existait déjà
+  sudo -u postgres psql -c \
+    "ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';" 2>/dev/null || true
+
   # Créer la base si elle n'existe pas
-  PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -h localhost \
-    -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" 2>/dev/null \
-    | grep -q 1 || PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -h localhost \
-    -c "CREATE DATABASE ${DB_NAME};" 2>/dev/null || true
+  sudo -u postgres psql -tc \
+    "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" 2>/dev/null \
+    | grep -q 1 || sudo -u postgres psql -c \
+    "CREATE DATABASE ${DB_NAME} OWNER ${DB_USER};" 2>/dev/null || true
+
+  # Accorder tous les privilèges
+  sudo -u postgres psql -c \
+    "GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_USER};" 2>/dev/null || true
+
+  # Vérifier la connexion avec les credentials configurés
+  if ! PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -h "$DB_HOST" -d "$DB_NAME" \
+      -c "SELECT 1;" &>/dev/null; then
+    log_error "Impossible de se connecter à PostgreSQL avec ${DB_USER}@${DB_HOST}/${DB_NAME}"
+    log_error "Vérifiez pg_hba.conf ou relancez ./install.sh"
+    exit 1
+  fi
 
   # Appliquer les migrations SQL du dossier drizzle/
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local MIGRATIONS_DIR="$SCRIPT_DIR/apps/server/drizzle"
   if [[ -d "$MIGRATIONS_DIR" ]]; then
     for sql_file in "$MIGRATIONS_DIR"/*.sql; do
       [[ -f "$sql_file" ]] || continue
       log_info "Migration : $(basename "$sql_file")..."
-      PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -h localhost -d "$DB_NAME" \
-        -f "$sql_file" -q 2>/dev/null && log_ok "$(basename "$sql_file") appliqué." \
-        || log_warn "$(basename "$sql_file") déjà appliqué ou erreur (ignoré)."
+      PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -h "$DB_HOST" -d "$DB_NAME" \
+        -f "$sql_file" -q 2>/dev/null \
+        && log_ok "$(basename "$sql_file") appliqué." \
+        || log_warn "$(basename "$sql_file") déjà appliqué ou erreur ignorée."
     done
   fi
 
@@ -405,12 +503,9 @@ print_summary() {
   echo -e "  ${BOLD}Lancer l'app desktop Tauri :${NC}"
   echo -e "    cd apps/desktop && npm run tauri:dev"
   echo ""
-  echo -e "  ${BOLD}Note importante :${NC}"
+  echo -e "  ${BOLD}Note :${NC}"
   echo -e "    Si Rust vient d'être installé, rechargez votre shell :"
   echo -e "    ${YELLOW}source ~/.cargo/env${NC}"
-  echo ""
-  echo -e "  ${BOLD}Avant de lancer le backend, éditer :${NC}"
-  echo -e "    ${YELLOW}apps/server/.env${NC}  (JWT_SECRET, DATABASE_URL)"
   echo ""
 }
 
@@ -436,7 +531,7 @@ main() {
   install_rust
   install_node
   install_node_deps
-  setup_env
+  configure_env
   install_postgres
   install_tauri_cli
   generate_tauri_icons
