@@ -332,6 +332,65 @@ PYEOF
 }
 
 # =============================================================================
+# PostgreSQL
+# =============================================================================
+
+install_postgres() {
+  log_section "PostgreSQL"
+
+  if command -v psql &>/dev/null; then
+    log_ok "PostgreSQL déjà installé : $(psql --version)"
+  else
+    log_info "Installation de PostgreSQL..."
+    sudo apt install -y postgresql postgresql-client
+    sudo systemctl enable postgresql
+    sudo systemctl start postgresql
+    log_ok "PostgreSQL installé."
+  fi
+
+  # S'assurer que PostgreSQL est démarré
+  sudo systemctl start postgresql 2>/dev/null || true
+
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local ENV_FILE="$SCRIPT_DIR/apps/server/.env"
+
+  # Lire les infos de connexion depuis le .env existant
+  if [[ -f "$ENV_FILE" ]]; then
+    local DB_URL
+    DB_URL=$(grep "^DATABASE_URL=" "$ENV_FILE" | cut -d= -f2-)
+    local DB_USER DB_PASS DB_NAME
+    DB_USER=$(echo "$DB_URL" | sed 's|postgresql://\([^:]*\):.*|\1|')
+    DB_PASS=$(echo "$DB_URL" | sed 's|postgresql://[^:]*:\([^@]*\)@.*|\1|')
+    DB_NAME=$(echo "$DB_URL" | sed 's|.*/\([^?]*\).*|\1|')
+  else
+    # Valeurs par défaut si pas encore de .env
+    DB_USER="postgres"; DB_PASS=""; DB_NAME="p2p_media"
+  fi
+
+  log_info "Configuration de la base '${DB_NAME}' (user: ${DB_USER})..."
+
+  # Créer la base si elle n'existe pas
+  PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -h localhost \
+    -tc "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'" 2>/dev/null \
+    | grep -q 1 || PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -h localhost \
+    -c "CREATE DATABASE ${DB_NAME};" 2>/dev/null || true
+
+  # Appliquer les migrations SQL du dossier drizzle/
+  local MIGRATIONS_DIR="$SCRIPT_DIR/apps/server/drizzle"
+  if [[ -d "$MIGRATIONS_DIR" ]]; then
+    for sql_file in "$MIGRATIONS_DIR"/*.sql; do
+      [[ -f "$sql_file" ]] || continue
+      log_info "Migration : $(basename "$sql_file")..."
+      PGPASSWORD="$DB_PASS" psql -U "$DB_USER" -h localhost -d "$DB_NAME" \
+        -f "$sql_file" -q 2>/dev/null && log_ok "$(basename "$sql_file") appliqué." \
+        || log_warn "$(basename "$sql_file") déjà appliqué ou erreur (ignoré)."
+    done
+  fi
+
+  log_ok "Base de données prête."
+}
+
+# =============================================================================
 # Récapitulatif final
 # =============================================================================
 
@@ -378,6 +437,7 @@ main() {
   install_node
   install_node_deps
   setup_env
+  install_postgres
   install_tauri_cli
   generate_tauri_icons
   print_summary

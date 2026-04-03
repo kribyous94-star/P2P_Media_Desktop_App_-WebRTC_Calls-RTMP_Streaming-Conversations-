@@ -13,6 +13,8 @@ apps/desktop/src-tauri/icons/
 .env
 .env.local
 .env.*.local
+# Sauf le .env du desktop (pas de secrets — URLs locales uniquement)
+!apps/desktop/.env
 
 # Editor
 .vscode/

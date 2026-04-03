@@ -2,38 +2,52 @@ import type { WebSocket } from "ws";
 import type { FastifyRequest } from "fastify";
 import type { WsClientEvent } from "@p2p/shared";
 import { connectionRegistry } from "./registry.js";
+import { decodeToken } from "../lib/jwt.js";
 
-/**
- * Point d'entrée WebSocket.
- * Chaque connexion est authentifiée via token en query param.
- * Les messages sont routés vers les handlers par type (chat | webrtc | rtmp).
- */
 export async function wsHandler(socket: WebSocket, request: FastifyRequest) {
-  // Phase 2 : on validera le token JWT ici
-  // const token = request.query.token
-  // const user = await verifyToken(token)
+  // Token JWT extrait du query param (les headers ne sont pas disponibles
+  // lors du handshake WebSocket côté navigateur)
+  const rawToken = (request.query as Record<string, string>)["token"];
+  const payload = rawToken ? decodeToken(rawToken) : null;
+
+  if (!payload) {
+    socket.send(JSON.stringify({
+      type: "auth:error",
+      payload: { message: "Token invalide ou manquant" },
+    }));
+    socket.close(4001, "Unauthorized");
+    return;
+  }
 
   const connectionId = crypto.randomUUID();
   connectionRegistry.add(connectionId, socket);
+  connectionRegistry.bindUser(connectionId, payload.sub);
 
-  console.log(`[WS] Client connected: ${connectionId}`);
+  // Confirmer l'authentification au client
+  socket.send(JSON.stringify({
+    type: "auth:success",
+    payload: { userId: payload.sub, username: payload.username },
+  }));
+
+  console.log(`[WS] ${payload.username} (${payload.sub}) connected — conn: ${connectionId}`);
 
   socket.on("message", (raw: Buffer) => {
     let event: WsClientEvent;
-
     try {
       event = JSON.parse(raw.toString()) as WsClientEvent;
     } catch {
-      socket.send(JSON.stringify({ type: "error", payload: { code: "INVALID_JSON", message: "Invalid message format" } }));
+      socket.send(JSON.stringify({
+        type: "error",
+        payload: { code: "INVALID_JSON", message: "Invalid message format" },
+      }));
       return;
     }
-
     routeEvent(connectionId, socket, event);
   });
 
   socket.on("close", () => {
     connectionRegistry.remove(connectionId);
-    console.log(`[WS] Client disconnected: ${connectionId}`);
+    console.log(`[WS] ${payload.username} disconnected — conn: ${connectionId}`);
   });
 
   socket.on("error", (err) => {
@@ -45,7 +59,7 @@ export async function wsHandler(socket: WebSocket, request: FastifyRequest) {
 function routeEvent(connectionId: string, socket: WebSocket, event: WsClientEvent) {
   switch (event.type) {
     case "auth":
-      // Phase 2
+      // Auth gérée au connect — ce message est ignoré
       break;
     case "join_conversation":
     case "leave_conversation":
@@ -63,7 +77,7 @@ function routeEvent(connectionId: string, socket: WebSocket, event: WsClientEven
     default:
       socket.send(JSON.stringify({
         type: "error",
-        payload: { code: "UNKNOWN_EVENT", message: `Unknown event type` },
+        payload: { code: "UNKNOWN_EVENT", message: "Unknown event type" },
       }));
   }
 }

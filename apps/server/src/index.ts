@@ -3,7 +3,9 @@ import cors from "@fastify/cors";
 import fastifyWebsocket from "@fastify/websocket";
 
 import { env } from "./config/env.js";
+import { checkDbConnection } from "./db/index.js";
 import { wsHandler } from "./websocket/handler.js";
+import { authRoutes } from "./modules/auth/auth.routes.js";
 
 const app = Fastify({
   logger: {
@@ -24,20 +26,24 @@ await app.register(cors, {
 
 await app.register(fastifyWebsocket);
 
-// ---- Routes ----
+// ---- Vérification DB ----
 
-// Health check
-app.get("/health", async () => ({ status: "ok", timestamp: new Date().toISOString() }));
+await checkDbConnection();
 
-// WebSocket — point d'entrée unique pour la signalisation et le chat
+// ---- Routes REST ----
+
+app.get("/health", async () => ({
+  status: "ok",
+  timestamp: new Date().toISOString(),
+}));
+
+await app.register(authRoutes, { prefix: "/api/auth" });
+
+// ---- WebSocket ----
+
 app.register(async (fastify) => {
   fastify.get("/ws", { websocket: true }, wsHandler);
 });
-
-// Routes REST modulaires (montées dans les phases suivantes)
-// app.register(authRoutes, { prefix: "/api/auth" });
-// app.register(conversationRoutes, { prefix: "/api/conversations" });
-// app.register(messageRoutes, { prefix: "/api/messages" });
 
 // ---- Start ----
 
