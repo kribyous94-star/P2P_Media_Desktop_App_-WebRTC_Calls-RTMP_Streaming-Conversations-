@@ -64,7 +64,7 @@ export async function messageRoutes(fastify: FastifyInstance) {
         return reply.status(201).send({ message });
       } catch (err) {
         if (err instanceof Error && err.message === "FORBIDDEN") {
-          return reply.status(403).send({ error: "Permission denied: send_message" });
+          return reply.status(403).send({ error: "Permission denied: write" });
         }
         throw err;
       }

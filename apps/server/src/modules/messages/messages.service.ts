@@ -80,7 +80,7 @@ export async function createMessage(
   type: "text" = "text"
 ): Promise<Message> {
   // Check permission
-  if (!(await hasPermission(conversationId, authorId, "send_message"))) {
+  if (!(await hasPermission(conversationId, authorId, "write"))) {
     throw new Error("FORBIDDEN");
   }
 
