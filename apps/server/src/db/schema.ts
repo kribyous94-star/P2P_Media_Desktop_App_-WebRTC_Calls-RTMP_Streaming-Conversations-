@@ -8,7 +8,7 @@ import {
   primaryKey,
   index,
 } from "drizzle-orm/pg-core";
-import type { ConversationType, UserRole, Permission } from "@p2p/shared";
+import type { ConversationType, UserRole, Permission, MessageType } from "@p2p/shared";
 
 export const users = pgTable("users", {
   id:           uuid("id").primaryKey().defaultRandom(),
@@ -61,3 +61,21 @@ export type Conversation       = typeof conversations.$inferSelect;
 export type NewConversation    = typeof conversations.$inferInsert;
 export type ConversationMember = typeof conversationMembers.$inferSelect;
 export type ConvPermission     = typeof conversationPermissions.$inferSelect;
+
+// ---- Messages ----
+
+export const messages = pgTable("messages", {
+  id:             uuid("id").primaryKey().defaultRandom(),
+  conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+  authorId:       uuid("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  type:           varchar("type", { length: 16 }).notNull().default("text").$type<MessageType>(),
+  content:        text("content").notNull(),
+  editedAt:       timestamp("edited_at", { withTimezone: true }),
+  deletedAt:      timestamp("deleted_at", { withTimezone: true }),
+  createdAt:      timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_messages_conversation").on(t.conversationId, t.createdAt),
+]);
+
+export type DbMessage    = typeof messages.$inferSelect;
+export type NewDbMessage = typeof messages.$inferInsert;

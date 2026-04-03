@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useConversationStore } from "@/stores/conversation.store.js";
+import ChatPanel from "@/components/ChatPanel.js";
 import styles from "./ConversationView.module.css";
 
 export default function ConversationView() {
@@ -15,9 +16,7 @@ export default function ConversationView() {
   const conv = conversations.find((c) => c.id === id);
 
   if (!conv) {
-    return (
-      <div className={styles.empty}>Conversation introuvable</div>
-    );
+    return <div className={styles.empty}>Conversation introuvable</div>;
   }
 
   return (
@@ -30,13 +29,11 @@ export default function ConversationView() {
         <span className={styles.role}>{conv.userRole}</span>
       </div>
 
-      {/* Phase 4 : Chat */}
+      {/* Phase 4 : Chat texte */}
+      <ChatPanel conversationId={conv.id} />
+
       {/* Phase 5 : WebRTC */}
       {/* Phase 7 : RTMP */}
-      <div className={styles.placeholder}>
-        <p>Conversation <strong>{conv.name}</strong></p>
-        <p className={styles.hint}>Phase 4 — Chat à venir</p>
-      </div>
     </div>
   );
 }

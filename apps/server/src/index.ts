@@ -7,6 +7,7 @@ import { checkDbConnection } from "./db/index.js";
 import { wsHandler } from "./websocket/handler.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { conversationRoutes } from "./modules/conversations/conversations.routes.js";
+import { messageRoutes } from "./modules/messages/messages.routes.js";
 
 const app = Fastify({
   logger: {
@@ -40,6 +41,7 @@ app.get("/health", async () => ({
 
 await app.register(authRoutes, { prefix: "/api/auth" });
 await app.register(conversationRoutes, { prefix: "/api/conversations" });
+await app.register(messageRoutes, { prefix: "/api/conversations" });
 
 // ---- WebSocket ----
 

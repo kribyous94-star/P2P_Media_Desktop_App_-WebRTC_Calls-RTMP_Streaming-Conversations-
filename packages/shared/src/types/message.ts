@@ -4,6 +4,7 @@ export interface Message {
   id: string;
   conversationId: string;
   authorId: string;
+  authorUsername: string;
   type: MessageType;
   content: string;
   editedAt?: string;

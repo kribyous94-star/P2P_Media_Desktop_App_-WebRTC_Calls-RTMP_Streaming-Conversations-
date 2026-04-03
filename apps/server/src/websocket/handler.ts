@@ -4,6 +4,7 @@ import type { WsClientEvent } from "@p2p/shared";
 import { connectionRegistry } from "./registry.js";
 import { decodeToken } from "../lib/jwt.js";
 import { handleJoinConversation, handleLeaveConversation } from "../modules/conversations/conversations.ws.js";
+import { handleChatMessage } from "../modules/messages/messages.ws.js";
 
 export async function wsHandler(socket: WebSocket, request: FastifyRequest) {
   const rawToken = (request.query as Record<string, string>)["token"];
@@ -81,7 +82,7 @@ async function routeEvent(
     }
 
     case "chat:message":
-      // Phase 4
+      await handleChatMessage(connectionId, userId, socket, event.payload);
       break;
 
     case "webrtc:signal":
