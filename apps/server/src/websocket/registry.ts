@@ -87,6 +87,15 @@ class ConnectionRegistry {
   getConversationMemberCount(conversationId: string): number {
     return this.conversationConnections.get(conversationId)?.size ?? 0;
   }
+
+  // Retourner toutes les conversations d'une connexion (pour cleanup au disconnect)
+  getConversations(connectionId: string): string[] {
+    const result: string[] = [];
+    this.conversationConnections.forEach((members, convId) => {
+      if (members.has(connectionId)) result.push(convId);
+    });
+    return result;
+  }
 }
 
 export const connectionRegistry = new ConnectionRegistry();
