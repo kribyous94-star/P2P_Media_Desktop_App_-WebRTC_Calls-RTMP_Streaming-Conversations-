@@ -1,14 +1,14 @@
 import { create } from "zustand";
-import { api, ApiError } from "@/lib/api.js";
+import { api } from "@/lib/api.js";
 import { useWsStore } from "./ws.store.js";
-import type { Permission } from "@p2p/shared";
+import type { Permission, UserRole } from "@p2p/shared";
 
 export interface ConversationItem {
   id:          string;
   name:        string;
   type:        "private" | "group" | "media_room";
   ownerId:     string;
-  userRole:    string;
+  userRole:    UserRole;
   permissions: Permission[];
   createdAt:   string;
   updatedAt:   string;

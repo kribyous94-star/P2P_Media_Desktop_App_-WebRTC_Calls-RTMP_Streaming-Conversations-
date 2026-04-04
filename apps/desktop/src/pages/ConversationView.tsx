@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { useConversationStore } from "@/stores/conversation.store.js";
+import { useAuthStore } from "@/stores/auth.store.js";
 import { api, ApiError } from "@/lib/api.js";
 import ChatPanel from "@/components/ChatPanel.js";
 import CallPanel from "@/components/CallPanel.js";
+import MembersPanel from "@/components/MembersPanel.js";
 import styles from "./ConversationView.module.css";
 
 function AddMemberPopover({ conversationId }: { conversationId: string }) {
@@ -67,10 +69,15 @@ function AddMemberPopover({ conversationId }: { conversationId: string }) {
 export default function ConversationView() {
   const { id } = useParams<{ id: string }>();
   const { conversations, activeId, setActive } = useConversationStore();
+  const currentUser = useAuthStore((s) => s.user);
+  const [showMembers, setShowMembers] = useState(false);
 
   useEffect(() => {
     if (id && id !== activeId) setActive(id);
   }, [id, activeId, setActive]);
+
+  // Close members panel when switching conversations
+  useEffect(() => { setShowMembers(false); }, [id]);
 
   const conv = conversations.find((c) => c.id === id);
 
@@ -89,19 +96,40 @@ export default function ConversationView() {
         <span className={styles.name}>{conv.name}</span>
         <span className={styles.role}>{conv.userRole}</span>
         {canInvite && <AddMemberPopover conversationId={conv.id} />}
+        <button
+          className={`${styles.membersBtn} ${showMembers ? styles.membersBtnActive : ""}`}
+          onClick={() => setShowMembers((v) => !v)}
+          title="Membres"
+        >
+          👥
+        </button>
       </div>
 
-      {/* Phase 5 : WebRTC — appels 1:1 (private + media_room) */}
-      {(conv.type === "private" || conv.type === "media_room") && (
-        <div className={styles.callWrapper}>
-          <CallPanel conversationId={conv.id} />
+      <div className={styles.body}>
+        <div className={styles.main}>
+          {/* Phase 5 : WebRTC — appels 1:1 (private + media_room) */}
+          {(conv.type === "private" || conv.type === "media_room") && (
+            <div className={styles.callWrapper}>
+              <CallPanel conversationId={conv.id} />
+            </div>
+          )}
+
+          {/* Phase 4 : Chat texte */}
+          <ChatPanel conversationId={conv.id} />
+
+          {/* Phase 7 : RTMP */}
         </div>
-      )}
 
-      {/* Phase 4 : Chat texte */}
-      <ChatPanel conversationId={conv.id} />
-
-      {/* Phase 7 : RTMP */}
+        {/* Phase 6 : Panneau membres */}
+        {showMembers && currentUser && (
+          <MembersPanel
+            conversationId={conv.id}
+            currentUserId={currentUser.id}
+            currentRole={conv.userRole}
+            onClose={() => setShowMembers(false)}
+          />
+        )}
+      </div>
     </div>
   );
 }

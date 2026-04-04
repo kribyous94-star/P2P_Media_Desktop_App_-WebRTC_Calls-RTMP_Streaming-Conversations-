@@ -13,7 +13,7 @@ const ALGORITHM = "HS256" as const;
 export function signToken(payload: Omit<JwtPayload, "iat" | "exp">): string {
   return jwt.sign(payload, env.JWT_SECRET, {
     algorithm: ALGORITHM,
-    expiresIn: env.JWT_EXPIRY,
+    expiresIn: env.JWT_EXPIRY as jwt.SignOptions["expiresIn"],
   });
 }
 

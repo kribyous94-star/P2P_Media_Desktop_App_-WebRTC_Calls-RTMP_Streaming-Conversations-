@@ -135,11 +135,14 @@ export async function getConversationMembers(conversationId: string, userId: str
 
   const rows = await db
     .select({
-      userId:   conversationMembers.userId,
-      role:     conversationMembers.role,
-      joinedAt: conversationMembers.joinedAt,
+      userId:      conversationMembers.userId,
+      role:        conversationMembers.role,
+      joinedAt:    conversationMembers.joinedAt,
+      username:    users.username,
+      displayName: users.displayName,
     })
     .from(conversationMembers)
+    .innerJoin(users, eq(users.id, conversationMembers.userId))
     .where(
       and(
         eq(conversationMembers.conversationId, conversationId),
@@ -147,7 +150,13 @@ export async function getConversationMembers(conversationId: string, userId: str
       )
     );
 
-  return rows;
+  return rows.map((r) => ({
+    userId:      r.userId,
+    role:        r.role,
+    joinedAt:    r.joinedAt.toISOString(),
+    username:    r.username,
+    displayName: r.displayName,
+  }));
 }
 
 export async function joinConversation(conversationId: string, userId: string) {
