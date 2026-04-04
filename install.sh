@@ -542,7 +542,7 @@ print_summary() {
   echo -e "    ${YELLOW}# 1. Compiler server (TypeScript → dist/) + frontend (Vite → dist/)${NC}"
   echo -e "    npm run build"
   echo ""
-  echo -e "    ${YELLOW}# 2a. Lancer le serveur compilé (production)${NC}"
+  echo -e "    ${YELLOW}# 2a. Lancer le serveur compilé — mode simple${NC}"
   echo -e "    npm run start --workspace=apps/server"
   echo -e "    ${BLUE}    → démarre apps/server/dist/index.js (Node.js, port 3001)${NC}"
   echo ""
@@ -553,6 +553,30 @@ print_summary() {
   echo -e "    ${YELLOW}# 2c. Générer l'installateur natif Tauri (.deb / AppImage)${NC}"
   echo -e "    cd apps/desktop && npm run tauri:build"
   echo -e "    ${BLUE}    → bundle généré dans apps/desktop/src-tauri/target/release/bundle/${NC}"
+  echo ""
+
+  # ---- PM2 ----
+  echo -e "  ${BOLD}Mode PM2 (gestionnaire de processus — recommandé en production) :${NC}"
+  echo ""
+  if command -v pm2 &>/dev/null; then
+    echo -e "    ${GREEN}PM2 détecté :${NC} $(pm2 --version)"
+  else
+    echo -e "    ${YELLOW}# Installer PM2 globalement (une seule fois)${NC}"
+    echo -e "    npm install -g pm2"
+    echo ""
+  fi
+  echo -e "    ${YELLOW}# Démarrer le serveur via l'ecosystem (après npm run build)${NC}"
+  echo -e "    pm2 start ecosystem.config.cjs"
+  echo ""
+  echo -e "    ${YELLOW}# Commandes courantes${NC}"
+  echo -e "    pm2 status                    ${BLUE}# état des processus${NC}"
+  echo -e "    pm2 logs p2p-server           ${BLUE}# logs en direct${NC}"
+  echo -e "    pm2 restart p2p-server        ${BLUE}# redémarrer sans coupure${NC}"
+  echo -e "    pm2 stop p2p-server           ${BLUE}# arrêter${NC}"
+  echo ""
+  echo -e "    ${YELLOW}# Persistance au reboot (à faire une fois)${NC}"
+  echo -e "    pm2 save && pm2 startup"
+  echo -e "    ${BLUE}    → exécutez ensuite la commande sudo affichée par pm2 startup${NC}"
   echo ""
 
   echo -e "  ${BOLD}Notes :${NC}"

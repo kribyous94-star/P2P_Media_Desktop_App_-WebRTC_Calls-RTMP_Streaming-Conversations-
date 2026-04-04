@@ -35,3 +35,4 @@ packages/shared/src/**/*.d.ts.map
 # Logs
 *.log
 logs/
+!logs/.gitkeep
