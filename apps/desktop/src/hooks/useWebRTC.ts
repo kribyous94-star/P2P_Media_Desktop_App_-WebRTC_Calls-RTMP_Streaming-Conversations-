@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useWsStore } from "@/stores/ws.store.js";
+import { useCallStore } from "@/stores/call.store.js";
 import type { SignalMessage, SignalType } from "@p2p/shared";
 
 export type CallStatus = "idle" | "calling" | "incoming" | "in-call";
@@ -9,7 +10,7 @@ const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun1.l.google.com:19302" },
 ];
 
-export function useWebRTC(conversationId: string, currentUserId: string) {
+export function useWebRTC(conversationId: string, currentUserId: string, callerName?: string) {
   const [status, setStatus]           = useState<CallStatus>("idle");
   const [remoteUserId, setRemoteUserId] = useState<string | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -124,8 +125,8 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      // call-request carries the offer so the callee can answer without an extra round-trip
-      sendSignal("call-request", targetUserId, { sdp: offer.sdp });
+      // call-request carries the offer + caller name for display purposes
+      sendSignal("call-request", targetUserId, { sdp: offer.sdp, callerName: callerName ?? currentUserId });
     } catch (err) {
       console.error("[WebRTC] startCall:", err);
       const msg = err instanceof DOMException
@@ -195,6 +196,19 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
     setVideoEnabled((v) => !v);
   }, []);
 
+  // ---- Reprendre une offre stockée globalement (appel reçu hors conversation) ----
+  useEffect(() => {
+    const { incoming, setIncoming } = useCallStore.getState();
+    if (incoming && incoming.conversationId === conversationId) {
+      pendingOfferRef.current  = { sdp: incoming.sdp, fromUserId: incoming.fromUserId };
+      remoteUserIdRef.current  = incoming.fromUserId;
+      setRemoteUserId(incoming.fromUserId);
+      setStatus("incoming");
+      setIncoming(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // uniquement au montage
+
   // ---- WS signal handler ----
 
   useEffect(() => {
@@ -205,7 +219,7 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
       const handle = async () => {
         switch (signal.type) {
           case "call-request": {
-            const { sdp } = signal.payload as { sdp: string };
+            const { sdp } = signal.payload as { sdp: string; callerName?: string };
             pendingOfferRef.current = { sdp, fromUserId: signal.fromPeerId };
             remoteUserIdRef.current = signal.fromPeerId;
             setRemoteUserId(signal.fromPeerId);

@@ -36,7 +36,7 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
     hangUp,
     toggleAudio,
     toggleVideo,
-  } = useWebRTC(conversationId, currentUser?.id ?? "");
+  } = useWebRTC(conversationId, currentUser?.id ?? "", currentUser?.displayName ?? currentUser?.username);
 
   const localVideoRef  = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
