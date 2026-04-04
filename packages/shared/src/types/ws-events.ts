@@ -4,6 +4,8 @@
 import type { Message } from "./message.js";
 import type { SignalMessage } from "./webrtc.js";
 import type { RtmpState } from "./rtmp.js";
+import type { UserRole } from "./user.js";
+import type { Permission } from "./conversation.js";
 
 // ---- Événements envoyés par le CLIENT ----
 export type ClientEventType =
@@ -22,6 +24,7 @@ export type ServerEventType =
   | "chat:history"
   | "webrtc:signal"
   | "rtmp:state_update"
+  | "conversation:added"
   | "conversation:member_joined"
   | "conversation:member_left"
   | "error";
@@ -36,6 +39,13 @@ export interface WsServerEvent {
   payload: unknown;
 }
 
+// Payload d'une conversation ajoutée (reçu par le nouveau membre)
+export interface ConversationAddedPayload {
+  id: string; name: string; type: string; ownerId: string;
+  userRole: UserRole; permissions: Permission[];
+  createdAt: string; updatedAt: string;
+}
+
 // Payloads typés pour chaque event serveur
 export type ServerPayloadMap = {
   "auth:success": { userId: string; username: string };
@@ -44,6 +54,7 @@ export type ServerPayloadMap = {
   "chat:history": { conversationId: string; messages: Message[] };
   "webrtc:signal": SignalMessage;
   "rtmp:state_update": RtmpState;
+  "conversation:added": ConversationAddedPayload;
   "conversation:member_joined": { conversationId: string; userId: string; username: string };
   "conversation:member_left": { conversationId: string; userId: string };
   "error": { code: string; message: string };

@@ -110,7 +110,7 @@ export default function ConversationView() {
           {/* Phase 5 : WebRTC — appels 1:1 (private + media_room) */}
           {(conv.type === "private" || conv.type === "media_room") && (
             <div className={styles.callWrapper}>
-              <CallPanel conversationId={conv.id} />
+              <CallPanel conversationId={conv.id} conversationName={conv.name} />
             </div>
           )}
 

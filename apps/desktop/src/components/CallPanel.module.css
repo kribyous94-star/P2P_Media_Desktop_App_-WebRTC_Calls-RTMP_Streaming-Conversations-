@@ -22,6 +22,12 @@
 }
 .callBtn:hover { background: #16a34a; }
 
+.callError {
+  font-size: 0.8125rem;
+  color: var(--color-danger);
+  margin-left: 0.75rem;
+}
+
 /* ---- Incoming overlay ---- */
 .incomingOverlay {
   position: absolute;

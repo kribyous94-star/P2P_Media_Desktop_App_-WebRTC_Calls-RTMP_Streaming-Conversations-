@@ -16,6 +16,7 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
+  const [callError, setCallError]     = useState<string | null>(null);
 
   // Refs for values needed inside closures
   const pcRef              = useRef<RTCPeerConnection | null>(null);
@@ -58,6 +59,7 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
     setRemoteStream(null);
     setAudioEnabled(true);
     setVideoEnabled(true);
+    setCallError(null);
   }, []);
 
   // Keep a stable ref to cleanup to call in the unmount effect
@@ -97,6 +99,7 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
 
   /** Initiate a call to targetUserId */
   const startCall = useCallback(async (targetUserId: string) => {
+    setCallError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
       localStreamRef.current  = stream;
@@ -115,6 +118,10 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
       sendSignal("call-request", targetUserId, { sdp: offer.sdp });
     } catch (err) {
       console.error("[WebRTC] startCall:", err);
+      const msg = err instanceof DOMException
+        ? (err.name === "NotAllowedError" ? "Accès caméra/micro refusé" : `Erreur média : ${err.message}`)
+        : "Impossible de démarrer l'appel";
+      setCallError(msg);
       cleanupRef.current();
     }
   }, [createPC, sendSignal]);
@@ -236,6 +243,7 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
 
   return {
     status,
+    callError,
     remoteUserId,
     localStream,
     remoteStream,

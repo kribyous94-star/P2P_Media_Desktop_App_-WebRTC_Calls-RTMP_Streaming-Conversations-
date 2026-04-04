@@ -81,3 +81,9 @@ useWsStore.getState().on("auth:success", () => {
   const { activeId, joinRoom } = useConversationStore.getState();
   if (activeId) joinRoom(activeId);
 });
+
+// Quand on est ajouté à une conversation par quelqu'un d'autre, l'ajouter au store
+// sans avoir besoin de recharger la page.
+useWsStore.getState().on("conversation:added", (conv) => {
+  useConversationStore.getState().addConversation(conv as ConversationItem);
+});

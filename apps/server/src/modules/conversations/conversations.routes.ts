@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { authenticate, getUserId } from "../../middleware/auth.js";
+import { connectionRegistry } from "../../websocket/registry.js";
 import {
   createConversationSchema,
   updateRoleSchema,
@@ -75,8 +76,22 @@ export async function conversationRoutes(app: FastifyInstance) {
         return reply.code(400).send({ error: "username requis" });
       }
       try {
-        const conv = await addMemberByUsername(request.params.id, getUserId(request), username.trim());
-        return reply.code(201).send({ conversation: conv });
+        const { conversation, targetUserId, targetUsername } =
+          await addMemberByUsername(request.params.id, getUserId(request), username.trim());
+
+        // Notifier le nouveau membre que la conversation lui a été ajoutée
+        connectionRegistry.sendToUser(targetUserId, {
+          type: "conversation:added",
+          payload: conversation,
+        });
+
+        // Notifier les membres déjà dans la room WS qu'un nouveau membre a rejoint
+        connectionRegistry.broadcastToConversation(request.params.id, {
+          type: "conversation:member_joined",
+          payload: { conversationId: request.params.id, userId: targetUserId, username: targetUsername },
+        });
+
+        return reply.code(201).send({ conversation });
       } catch (err) { return handleError(err, reply); }
     }
   );

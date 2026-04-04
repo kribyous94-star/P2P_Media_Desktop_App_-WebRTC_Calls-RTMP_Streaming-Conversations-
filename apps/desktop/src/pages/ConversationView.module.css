@@ -22,7 +22,7 @@
 }
 
 .callWrapper {
-  position: relative;
+  /* Pas de position: relative ici — l'overlay incoming se positionne par rapport à .main */
   flex-shrink: 0;
 }
 

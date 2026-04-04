@@ -185,7 +185,7 @@ export async function addMemberByUsername(
   conversationId: string,
   requestingUserId: string,
   targetUsername: string
-) {
+): Promise<{ conversation: ReturnType<typeof toPublicConversation>; targetUserId: string; targetUsername: string }> {
   if (!(await hasPermission(conversationId, requestingUserId, "invite"))) {
     throw new ConversationError("Permission refusée : invite", 403);
   }
@@ -199,7 +199,8 @@ export async function addMemberByUsername(
   if (!target) throw new ConversationError("Utilisateur introuvable", 404);
 
   // joinConversation handles the "already member" check
-  return joinConversation(conversationId, target.id);
+  const conversation = await joinConversation(conversationId, target.id);
+  return { conversation, targetUserId: target.id, targetUsername: target.username };
 }
 
 export async function leaveConversation(conversationId: string, userId: string) {
