@@ -26,6 +26,12 @@ apps/desktop/src-tauri/icons/
 .DS_Store
 Thumbs.db
 
+# Artefacts de compilation du package shared (JS + .d.ts émis par tsc)
+packages/shared/src/**/*.js
+packages/shared/src/**/*.js.map
+packages/shared/src/**/*.d.ts
+packages/shared/src/**/*.d.ts.map
+
 # Logs
 *.log
 logs/
