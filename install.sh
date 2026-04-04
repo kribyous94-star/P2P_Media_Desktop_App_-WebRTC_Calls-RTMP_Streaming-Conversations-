@@ -79,6 +79,20 @@ install_system_deps() {
     libwebkit2gtk-4.1-dev
     pkg-config
     git
+
+    # ---- Audio / Vidéo (Phase 5+ : WebRTC, Phase 7+ : RTMP) ----
+    # GStreamer — requis par WebKit pour capturer micro/caméra
+    gstreamer1.0-plugins-base
+    gstreamer1.0-plugins-good
+    gstreamer1.0-plugins-bad
+    gstreamer1.0-libav
+    gstreamer1.0-gl
+    # ALSA + PulseAudio (audio système)
+    libasound2-dev
+    libpulse-dev
+    # Video4Linux (accès caméra)
+    libv4l-dev
+    v4l-utils
   )
 
   # Résoudre le conflit libappindicator / libayatana sur Ubuntu 22.04+
@@ -497,15 +511,42 @@ print_summary() {
 
   echo -e "${GREEN}${BOLD}Tout est prêt !${NC}"
   echo ""
-  echo -e "  ${BOLD}Lancer le serveur backend :${NC}"
+
+  echo -e "  ${BOLD}Phases implémentées :${NC}"
+  echo -e "    ✅ Phase 1  — Monorepo, Tauri scaffold, Fastify, WebSocket, Zustand"
+  echo -e "    ✅ Phase 2  — Auth (register/login/logout, JWT, argon2id)"
+  echo -e "    ✅ Phase 3  — Conversations (CRUD, rôles, permissions, rooms WS)"
+  echo -e "    ✅ Phase 4  — Chat texte (messages persistants, pagination, temps réel)"
+  echo -e "    ✅ Phase 5  — WebRTC 1:1 (signaling, audio/vidéo, appels entrants globaux)"
+  echo -e "    ✅ Phase 6  — Gestion membres (liste, rôles, kick, invitation par username)"
+  echo ""
+
+  echo -e "  ${BOLD}Mode développement (navigateur — le plus rapide pour tester) :${NC}"
+  echo -e "    ${YELLOW}# Terminal 1 — backend${NC}"
   echo -e "    npm run dev:server"
   echo ""
-  echo -e "  ${BOLD}Lancer l'app desktop Tauri :${NC}"
+  echo -e "    ${YELLOW}# Terminal 2 — frontend React (http://localhost:1420)${NC}"
+  echo -e "    npm run dev:desktop"
+  echo ""
+
+  echo -e "  ${BOLD}Mode Tauri (app desktop native) :${NC}"
+  echo -e "    ${YELLOW}# Terminal 1 — backend${NC}"
+  echo -e "    npm run dev:server"
+  echo ""
+  echo -e "    ${YELLOW}# Terminal 2 — Tauri + Vite${NC}"
   echo -e "    cd apps/desktop && npm run tauri:dev"
   echo ""
-  echo -e "  ${BOLD}Note :${NC}"
-  echo -e "    Si Rust vient d'être installé, rechargez votre shell :"
-  echo -e "    ${YELLOW}source ~/.cargo/env${NC}"
+
+  echo -e "  ${BOLD}Build production complet :${NC}"
+  echo -e "    npm run build"
+  echo ""
+
+  echo -e "  ${BOLD}Notes :${NC}"
+  echo -e "    • Si Rust vient d'être installé, rechargez votre shell :"
+  echo -e "      ${YELLOW}source ~/.cargo/env${NC}"
+  echo -e "    • WebRTC (micro/caméra) requiert HTTPS ou localhost."
+  echo -e "      En mode navigateur, ouvrez ${YELLOW}http://localhost:1420${NC}"
+  echo -e "    • Vérifiez que votre micro/caméra est branché avant de tester les appels."
   echo ""
 }
 
