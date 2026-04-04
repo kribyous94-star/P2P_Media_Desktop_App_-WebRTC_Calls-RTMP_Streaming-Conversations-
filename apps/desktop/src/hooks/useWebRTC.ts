@@ -59,7 +59,7 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
     setRemoteStream(null);
     setAudioEnabled(true);
     setVideoEnabled(true);
-    setCallError(null);
+    // callError n'est pas réinitialisé ici — il persiste jusqu'à la prochaine action
   }, []);
 
   // Keep a stable ref to cleanup to call in the unmount effect
@@ -97,11 +97,21 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
 
   // ---- Public API ----
 
+  /** Acquire best available media stream: video+audio → audio only → error */
+  async function getMedia(): Promise<MediaStream> {
+    try {
+      return await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    } catch {
+      // Fallback audio-only (pas de caméra, ou caméra refusée)
+      return await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    }
+  }
+
   /** Initiate a call to targetUserId */
   const startCall = useCallback(async (targetUserId: string) => {
     setCallError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      const stream = await getMedia();
       localStreamRef.current  = stream;
       remoteUserIdRef.current = targetUserId;
       setLocalStream(stream);
@@ -119,10 +129,12 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
     } catch (err) {
       console.error("[WebRTC] startCall:", err);
       const msg = err instanceof DOMException
-        ? (err.name === "NotAllowedError" ? "Accès caméra/micro refusé" : `Erreur média : ${err.message}`)
+        ? (err.name === "NotAllowedError"
+            ? "Accès micro/caméra refusé — vérifie les permissions du navigateur"
+            : "Aucun micro détecté — branche un micro et réessaie")
         : "Impossible de démarrer l'appel";
-      setCallError(msg);
       cleanupRef.current();
+      setCallError(msg);  // après cleanup pour ne pas être écrasé
     }
   }, [createPC, sendSignal]);
 
@@ -130,8 +142,9 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
   const acceptCall = useCallback(async () => {
     const pending = pendingOfferRef.current;
     if (!pending) return;
+    setCallError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      const stream = await getMedia();
       localStreamRef.current = stream;
       setLocalStream(stream);
 
@@ -154,6 +167,7 @@ export function useWebRTC(conversationId: string, currentUserId: string) {
     } catch (err) {
       console.error("[WebRTC] acceptCall:", err);
       cleanupRef.current();
+      setCallError("Impossible d'accepter l'appel — vérifie ton micro");
     }
   }, [createPC, sendSignal]);
 
