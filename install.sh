@@ -362,13 +362,128 @@ ENVEOF
 
   log_ok ".env configuré : ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME} — serveur port ${APP_PORT}"
 
-  # Exporter pour install_postgres et print_summary
+  # Exporter pour install_postgres, configure_deployment et print_summary
   export _DB_USER="$DB_USER"
   export _DB_PASS="$DB_PASS"
   export _DB_HOST="$DB_HOST"
   export _DB_PORT="$DB_PORT"
   export _DB_NAME="$DB_NAME"
   export _APP_PORT="$APP_PORT"
+}
+
+# =============================================================================
+# Configuration du déploiement en production (optionnel — interactif)
+# =============================================================================
+
+configure_deployment() {
+  log_section "Déploiement en production (optionnel)"
+
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  local DESKTOP_ENV="$SCRIPT_DIR/apps/desktop/.env"
+  local SERVER_ENV="$SCRIPT_DIR/apps/server/.env"
+  local APP_PORT="${_APP_PORT:-3001}"
+
+  echo -e "  Si cette application est hébergée sur un serveur public,"
+  echo -e "  je peux configurer automatiquement les .env et générer la config nginx."
+  echo -e "  ${BLUE}Laissez vide (Entrée) pour passer — installation locale uniquement.${NC}"
+  echo ""
+
+  # ---- Lire le domaine actuel depuis desktop/.env ----
+  local CUR_DOMAIN=""
+  if [[ -f "$DESKTOP_ENV" ]]; then
+    local EXISTING_VITE
+    EXISTING_VITE=$(grep "^VITE_API_URL=" "$DESKTOP_ENV" 2>/dev/null | cut -d= -f2- || true)
+    if [[ -n "$EXISTING_VITE" ]] && [[ "$EXISTING_VITE" != *"localhost"* ]]; then
+      CUR_DOMAIN=$(echo "$EXISTING_VITE" | sed 's|https://||')
+    fi
+  fi
+
+  local DOMAIN
+  if [[ -n "$CUR_DOMAIN" ]]; then
+    read -rp "  Domaine / sous-domaine [${CUR_DOMAIN}] : " DOMAIN
+    DOMAIN="${DOMAIN:-$CUR_DOMAIN}"
+  else
+    read -rp "  Domaine / sous-domaine [Entrée = ignorer] : " DOMAIN
+  fi
+
+  if [[ -z "$DOMAIN" ]]; then
+    log_info "Déploiement ignoré — configuration locale conservée."
+    return
+  fi
+
+  # ---- Type de déploiement ----
+  echo ""
+  echo -e "  Type de déploiement :"
+  echo -e "    ${BOLD}1)${NC} Sous-domaine  ${BLUE}${DOMAIN}${NC} sur serveur partagé (autres sites non affectés)"
+  echo -e "    ${BOLD}2)${NC} Domaine dédié ${BLUE}${DOMAIN}${NC} entièrement réservé à cette application"
+  read -rp "  Choix [1] : " DEPLOY_CHOICE
+  local DEPLOY_TYPE="subdomain"
+  [[ "${DEPLOY_CHOICE}" == "2" ]] && DEPLOY_TYPE="dedicated"
+
+  # ---- Chemin du projet sur le serveur ----
+  read -rp "  Chemin absolu du projet sur le serveur [${SCRIPT_DIR}] : " INPUT_PATH
+  local DEPLOY_PATH="${INPUT_PATH:-$SCRIPT_DIR}"
+
+  # ---- Mettre à jour apps/server/.env (ALLOWED_ORIGINS) ----
+  if [[ -f "$SERVER_ENV" ]]; then
+    if grep -q "^ALLOWED_ORIGINS=" "$SERVER_ENV"; then
+      sed -i "s|^ALLOWED_ORIGINS=.*|ALLOWED_ORIGINS=https://${DOMAIN}|" "$SERVER_ENV"
+    else
+      printf "\nALLOWED_ORIGINS=https://%s\n" "$DOMAIN" >> "$SERVER_ENV"
+    fi
+    log_ok "apps/server/.env  → ALLOWED_ORIGINS=https://${DOMAIN}"
+  fi
+
+  # ---- Mettre à jour apps/desktop/.env ----
+  cat > "$DESKTOP_ENV" <<DESKTOPEOF
+VITE_API_URL=https://${DOMAIN}
+VITE_WS_URL=wss://${DOMAIN}/ws
+DESKTOPEOF
+  log_ok "apps/desktop/.env → VITE_API_URL=https://${DOMAIN}"
+  log_warn "Le frontend intègre ces URLs au build — relancez npm run build après l'installation."
+
+  # ---- Générer la config nginx ----
+  local TEMPLATE
+  if [[ "$DEPLOY_TYPE" == "dedicated" ]]; then
+    TEMPLATE="$SCRIPT_DIR/nginx/dedicated.conf"
+  else
+    TEMPLATE="$SCRIPT_DIR/nginx/subdomain.conf"
+  fi
+
+  local NGINX_OUT="$SCRIPT_DIR/nginx/p2pmedia.conf"
+
+  # Remplacer les placeholders dans le template
+  sed \
+    -e "s|media\.votre-domaine\.com|${DOMAIN}|g" \
+    -e "s|votre-domaine\.com|${DOMAIN}|g" \
+    -e "s|/chemin/vers/le/projet|${DEPLOY_PATH}|g" \
+    -e "s|server 127\.0\.0\.1:3001|server 127.0.0.1:${APP_PORT}|g" \
+    "$TEMPLATE" > "$NGINX_OUT"
+
+  log_ok "Config nginx générée : nginx/p2pmedia.conf (${DEPLOY_TYPE}, port ${APP_PORT})"
+
+  # ---- Installer dans nginx si disponible ----
+  if command -v nginx &>/dev/null; then
+    echo ""
+    read -rp "  Nginx détecté. Installer et activer la config maintenant ? [y/N] : " DO_NGINX
+    if [[ "${DO_NGINX,,}" == "y" ]]; then
+      sudo cp "$NGINX_OUT" /etc/nginx/sites-available/p2pmedia
+      sudo rm -f /etc/nginx/sites-enabled/p2pmedia
+      sudo ln -s /etc/nginx/sites-available/p2pmedia /etc/nginx/sites-enabled/p2pmedia
+      if sudo nginx -t 2>/dev/null; then
+        sudo systemctl reload nginx
+        log_ok "Nginx configuré et rechargé."
+        log_warn "Obtenez le certificat SSL : sudo certbot --nginx -d ${DOMAIN}"
+      else
+        log_error "La config nginx contient une erreur. Fichier copié mais non chargé."
+        sudo nginx -t
+      fi
+    fi
+  fi
+
+  # Exporter pour print_summary
+  export _DEPLOY_DOMAIN="$DOMAIN"
+  export _DEPLOY_TYPE="$DEPLOY_TYPE"
 }
 
 # =============================================================================
@@ -549,6 +664,8 @@ print_summary() {
   echo -e "    cd apps/desktop && npm run tauri:dev"
   echo ""
 
+  local DISPLAY_PORT="${_APP_PORT:-3001}"
+
   echo -e "  ${BOLD}Build production — étapes complètes :${NC}"
   echo ""
   echo -e "    ${YELLOW}# 1. Compiler server (TypeScript → dist/) + frontend (Vite → dist/)${NC}"
@@ -556,7 +673,7 @@ print_summary() {
   echo ""
   echo -e "    ${YELLOW}# 2a. Lancer le serveur compilé — mode simple${NC}"
   echo -e "    npm run start --workspace=apps/server"
-  echo -e "    ${BLUE}    → démarre apps/server/dist/index.js (Node.js, port 3001)${NC}"
+  echo -e "    ${BLUE}    → démarre apps/server/dist/index.js (Node.js, port ${DISPLAY_PORT})${NC}"
   echo ""
   echo -e "    ${YELLOW}# 2b. Prévisualiser le frontend web compilé (optionnel)${NC}"
   echo -e "    npm run preview --workspace=apps/desktop"
@@ -592,35 +709,70 @@ print_summary() {
   echo ""
 
   # ---- Nginx ----
-  local DISPLAY_PORT="${_APP_PORT:-3001}"
-  echo -e "  ${BOLD}Mise en ligne avec Nginx (déploiement serveur) :${NC}"
+  echo -e "  ${BOLD}Mise en ligne avec Nginx :${NC}"
   echo ""
-  echo -e "    ${YELLOW}# 1. Installer nginx et certbot${NC}"
-  echo -e "    sudo apt install -y nginx certbot python3-certbot-nginx"
-  echo ""
-  echo -e "    ${YELLOW}# 2a. Domaine dédié (toute la plateforme sur votre-domaine.com)${NC}"
-  echo -e "    sudo cp nginx/dedicated.conf /etc/nginx/sites-available/p2pmedia"
-  echo -e "    ${BLUE}    → Remplacer 'votre-domaine.com' et '/chemin/vers/le/projet' dans le fichier${NC}"
-  echo ""
-  echo -e "    ${YELLOW}# 2b. Sous-domaine (media.votre-domaine.com sur serveur partagé)${NC}"
-  echo -e "    sudo cp nginx/subdomain.conf /etc/nginx/sites-available/p2pmedia"
-  echo -e "    ${BLUE}    → Remplacer 'media.votre-domaine.com' et '/chemin/vers/le/projet' dans le fichier${NC}"
-  echo ""
-  echo -e "    ${YELLOW}# Dans les deux cas, mettre à jour le port upstream nginx${NC}"
-  echo -e "    ${BLUE}    upstream p2p_backend { server 127.0.0.1:${DISPLAY_PORT}; }${NC}"
-  echo ""
-  echo -e "    ${YELLOW}# 3. Activer et obtenir le certificat SSL${NC}"
-  echo -e "    sudo ln -s /etc/nginx/sites-available/p2pmedia /etc/nginx/sites-enabled/"
-  echo -e "    sudo nginx -t && sudo systemctl reload nginx"
-  echo -e "    sudo certbot --nginx -d votre-domaine.com   ${BLUE}# ou media.votre-domaine.com${NC}"
-  echo ""
-  echo -e "    ${YELLOW}# 4. Variables d'environnement à mettre à jour pour la production${NC}"
-  echo -e "    ${BLUE}    apps/server/.env :${NC}"
-  echo -e "    ALLOWED_ORIGINS=https://votre-domaine.com"
-  echo -e "    ${BLUE}    apps/desktop/.env (avant npm run build) :${NC}"
-  echo -e "    VITE_API_URL=https://votre-domaine.com"
-  echo -e "    VITE_WS_URL=wss://votre-domaine.com/ws"
-  echo ""
+
+  if [[ -n "${_DEPLOY_DOMAIN:-}" ]]; then
+    # Un domaine a été configuré automatiquement
+    echo -e "    ${GREEN}Configuration de déploiement détectée :${NC}"
+    echo -e "    • Domaine    : ${BLUE}${_DEPLOY_DOMAIN}${NC}"
+    echo -e "    • Type       : ${_DEPLOY_TYPE:-subdomain}"
+    echo -e "    • Port       : ${DISPLAY_PORT}"
+    echo -e "    • Config     : ${YELLOW}nginx/p2pmedia.conf${NC} (prête à utiliser)"
+    echo ""
+    echo -e "    ${YELLOW}# Étapes restantes :${NC}"
+    echo -e "    ${YELLOW}# 1. Rebuild du frontend (URLs intégrées au build)${NC}"
+    echo -e "    npm run build"
+    echo ""
+    if ! command -v nginx &>/dev/null; then
+      echo -e "    ${YELLOW}# 2. Installer nginx et certbot${NC}"
+      echo -e "    sudo apt install -y nginx certbot python3-certbot-nginx"
+      echo ""
+      echo -e "    ${YELLOW}# 3. Copier et activer la config${NC}"
+      echo -e "    sudo cp nginx/p2pmedia.conf /etc/nginx/sites-available/p2pmedia"
+      echo -e "    sudo ln -s /etc/nginx/sites-available/p2pmedia /etc/nginx/sites-enabled/"
+      echo -e "    sudo nginx -t && sudo systemctl reload nginx"
+      echo ""
+    fi
+    echo -e "    ${YELLOW}# Obtenir le certificat SSL (Let's Encrypt)${NC}"
+    echo -e "    sudo certbot --nginx -d ${_DEPLOY_DOMAIN}"
+    echo ""
+  else
+    # Pas de domaine configuré — instructions manuelles complètes
+    echo -e "    ${YELLOW}# 1. Installer nginx et certbot${NC}"
+    echo -e "    sudo apt install -y nginx certbot python3-certbot-nginx"
+    echo ""
+    echo -e "    ${YELLOW}# 2. Configurer les variables d'environnement${NC}"
+    echo -e "    ${BLUE}    apps/server/.env — ajouter/modifier :${NC}"
+    echo -e "    ALLOWED_ORIGINS=https://votre-domaine.com"
+    echo -e "    ${BLUE}    apps/desktop/.env — créer/modifier (avant npm run build) :${NC}"
+    echo -e "    ${BLUE}    → Sous-domaine :${NC}"
+    echo -e "    VITE_API_URL=https://media.votre-domaine.com"
+    echo -e "    VITE_WS_URL=wss://media.votre-domaine.com/ws"
+    echo -e "    ${BLUE}    → Domaine dédié :${NC}"
+    echo -e "    VITE_API_URL=https://votre-domaine.com"
+    echo -e "    VITE_WS_URL=wss://votre-domaine.com/ws"
+    echo ""
+    echo -e "    ${YELLOW}# 3. Rebuilder le frontend après les changements d'URL${NC}"
+    echo -e "    npm run build"
+    echo ""
+    echo -e "    ${YELLOW}# 4a. Sous-domaine (media.votre-domaine.com sur serveur partagé)${NC}"
+    echo -e "    sudo cp nginx/subdomain.conf /etc/nginx/sites-available/p2pmedia"
+    echo -e "    ${BLUE}    → Éditer : server_name, ssl_certificate, root, upstream port ${DISPLAY_PORT}${NC}"
+    echo ""
+    echo -e "    ${YELLOW}# 4b. Domaine dédié (votre-domaine.com entier pour cette app)${NC}"
+    echo -e "    sudo cp nginx/dedicated.conf /etc/nginx/sites-available/p2pmedia"
+    echo -e "    ${BLUE}    → Éditer : server_name, ssl_certificate, root, upstream port ${DISPLAY_PORT}${NC}"
+    echo ""
+    echo -e "    ${BLUE}    Conseil : relancez ./install.sh et répondez à la question domaine${NC}"
+    echo -e "    ${BLUE}    pour que tout soit configuré automatiquement.${NC}"
+    echo ""
+    echo -e "    ${YELLOW}# 5. Activer et SSL${NC}"
+    echo -e "    sudo ln -s /etc/nginx/sites-available/p2pmedia /etc/nginx/sites-enabled/"
+    echo -e "    sudo nginx -t && sudo systemctl reload nginx"
+    echo -e "    sudo certbot --nginx -d votre-domaine.com"
+    echo ""
+  fi
 
   echo -e "  ${BOLD}Notes :${NC}"
   echo -e "    • Si Rust vient d'être installé, rechargez votre shell :"
@@ -654,6 +806,7 @@ main() {
   install_node
   install_node_deps
   configure_env
+  configure_deployment
   install_postgres
   install_tauri_cli
   generate_tauri_icons

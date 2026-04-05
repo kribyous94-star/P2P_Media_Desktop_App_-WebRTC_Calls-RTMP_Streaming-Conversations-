@@ -29,6 +29,9 @@ Thumbs.db
 # Artefacts de compilation du package shared
 # (dist/ est déjà couvert par la règle dist/ globale ci-dessus)
 
+# Config nginx générée par install.sh (contient domaine/chemin spécifiques au serveur)
+nginx/p2pmedia.conf
+
 # Logs
 *.log
 logs/
