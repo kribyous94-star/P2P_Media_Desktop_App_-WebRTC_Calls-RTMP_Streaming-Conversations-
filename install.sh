@@ -724,11 +724,19 @@ print_summary() {
     echo -e "    ${YELLOW}# 1. Rebuild du frontend (URLs intégrées au build)${NC}"
     echo -e "    npm run build"
     echo ""
+    echo -e "    ${YELLOW}# 2. Démarrer (ou redémarrer) le serveur avec PM2${NC}"
+    if command -v pm2 &>/dev/null; then
+      echo -e "    pm2 restart p2p-server   ${BLUE}# si déjà lancé${NC}"
+      echo -e "    ${BLUE}    ou${NC}"
+    fi
+    echo -e "    pm2 start ecosystem.config.cjs"
+    echo -e "    pm2 save"
+    echo ""
     if ! command -v nginx &>/dev/null; then
-      echo -e "    ${YELLOW}# 2. Installer nginx et certbot${NC}"
+      echo -e "    ${YELLOW}# 3. Installer nginx et certbot${NC}"
       echo -e "    sudo apt install -y nginx certbot python3-certbot-nginx"
       echo ""
-      echo -e "    ${YELLOW}# 3. Copier et activer la config${NC}"
+      echo -e "    ${YELLOW}# 4. Copier et activer la config${NC}"
       echo -e "    sudo cp nginx/p2pmedia.conf /etc/nginx/sites-available/p2pmedia"
       echo -e "    sudo ln -s /etc/nginx/sites-available/p2pmedia /etc/nginx/sites-enabled/"
       echo -e "    sudo nginx -t && sudo systemctl reload nginx"
