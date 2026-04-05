@@ -1,4 +1,11 @@
-import "dotenv/config";
+import { config } from "dotenv";
+import { dirname, join } from "path";
+import { fileURLToPath } from "url";
+
+// Charge .env relatif à ce fichier compilé (dist/config/env.js → ../../.env = apps/server/.env)
+// Fonctionne peu importe le répertoire courant (PM2, nx, etc.)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+config({ path: join(__dirname, "../../.env") });
 
 function required(key: string): string {
   const value = process.env[key];
