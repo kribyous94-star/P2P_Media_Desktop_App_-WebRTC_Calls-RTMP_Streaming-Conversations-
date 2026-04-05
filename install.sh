@@ -273,6 +273,7 @@ configure_env() {
   # ---- Valeurs courantes (pour les re-runs) ----
   local CUR_DB_HOST="localhost" CUR_DB_PORT="5432" CUR_DB_NAME="p2p_media"
   local CUR_DB_USER="p2p"      CUR_DB_PASS=""      CUR_JWT_SECRET=""
+  local CUR_APP_PORT="3001"
 
   if [[ -f "$ENV_FILE" ]]; then
     local EXISTING_URL
@@ -285,13 +286,16 @@ configure_env() {
       CUR_DB_NAME=$(echo "$EXISTING_URL" | sed 's|.*/\([^?]*\).*|\1|')
     fi
     CUR_JWT_SECRET=$(grep "^JWT_SECRET=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+    local EXISTING_PORT
+    EXISTING_PORT=$(grep "^PORT=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+    [[ -n "$EXISTING_PORT" ]] && CUR_APP_PORT="$EXISTING_PORT"
   fi
 
   # ---- Prompts interactifs ----
   echo -e "${BOLD}  Configuration PostgreSQL${NC}  (Entrée = valeur par défaut)"
   echo ""
 
-  local DB_HOST DB_PORT DB_NAME DB_USER DB_PASS JWT_SECRET
+  local DB_HOST DB_PORT DB_NAME DB_USER DB_PASS JWT_SECRET APP_PORT
   read -rp "  Hôte          [${CUR_DB_HOST}] : " DB_HOST;  DB_HOST="${DB_HOST:-$CUR_DB_HOST}"
   read -rp "  Port          [${CUR_DB_PORT}] : " DB_PORT;  DB_PORT="${DB_PORT:-$CUR_DB_PORT}"
   read -rp "  Base de données [${CUR_DB_NAME}] : " DB_NAME; DB_NAME="${DB_NAME:-$CUR_DB_NAME}"
@@ -333,12 +337,19 @@ configure_env() {
   fi
   JWT_SECRET="${JWT_SECRET:-$DEFAULT_JWT}"
 
+  # ---- Port du serveur HTTP ----
+  echo ""
+  echo -e "  ${BOLD}Port du serveur Fastify${NC}"
+  echo -e "  ${BLUE}(choisir un port libre, ex: 3001, 3010, 4000...)${NC}"
+  read -rp "  PORT [${CUR_APP_PORT}] : " APP_PORT
+  APP_PORT="${APP_PORT:-$CUR_APP_PORT}"
+
   # ---- Écriture du .env ----
   local DATABASE_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
 
   cat > "$ENV_FILE" <<ENVEOF
 NODE_ENV=development
-PORT=3001
+PORT=${APP_PORT}
 HOST=0.0.0.0
 
 JWT_SECRET=${JWT_SECRET}
@@ -349,14 +360,15 @@ DATABASE_URL=${DATABASE_URL}
 ALLOWED_ORIGINS=http://localhost:1420
 ENVEOF
 
-  log_ok ".env configuré : ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
+  log_ok ".env configuré : ${DB_USER}@${DB_HOST}:${DB_PORT}/${DB_NAME} — serveur port ${APP_PORT}"
 
-  # Exporter pour install_postgres
+  # Exporter pour install_postgres et print_summary
   export _DB_USER="$DB_USER"
   export _DB_PASS="$DB_PASS"
   export _DB_HOST="$DB_HOST"
   export _DB_PORT="$DB_PORT"
   export _DB_NAME="$DB_NAME"
+  export _APP_PORT="$APP_PORT"
 }
 
 # =============================================================================
@@ -580,6 +592,7 @@ print_summary() {
   echo ""
 
   # ---- Nginx ----
+  local DISPLAY_PORT="${_APP_PORT:-3001}"
   echo -e "  ${BOLD}Mise en ligne avec Nginx (déploiement serveur) :${NC}"
   echo ""
   echo -e "    ${YELLOW}# 1. Installer nginx et certbot${NC}"
@@ -592,6 +605,9 @@ print_summary() {
   echo -e "    ${YELLOW}# 2b. Sous-domaine (media.votre-domaine.com sur serveur partagé)${NC}"
   echo -e "    sudo cp nginx/subdomain.conf /etc/nginx/sites-available/p2pmedia"
   echo -e "    ${BLUE}    → Remplacer 'media.votre-domaine.com' et '/chemin/vers/le/projet' dans le fichier${NC}"
+  echo ""
+  echo -e "    ${YELLOW}# Dans les deux cas, mettre à jour le port upstream nginx${NC}"
+  echo -e "    ${BLUE}    upstream p2p_backend { server 127.0.0.1:${DISPLAY_PORT}; }${NC}"
   echo ""
   echo -e "    ${YELLOW}# 3. Activer et obtenir le certificat SSL${NC}"
   echo -e "    sudo ln -s /etc/nginx/sites-available/p2pmedia /etc/nginx/sites-enabled/"
