@@ -6,6 +6,7 @@ import { decodeToken } from "../lib/jwt.js";
 import { handleJoinConversation, handleLeaveConversation } from "../modules/conversations/conversations.ws.js";
 import { handleChatMessage } from "../modules/messages/messages.ws.js";
 import { handleWebRTCSignal } from "../modules/webrtc/webrtc.ws.js";
+import { handleRtmpStart, handleRtmpChunk, handleRtmpStop, stopAllRtmpStreams } from "../modules/rtmp/index.js";
 
 export async function wsHandler(socket: WebSocket, request: FastifyRequest) {
   const rawToken = (request.query as Record<string, string>)["token"];
@@ -51,6 +52,8 @@ export async function wsHandler(socket: WebSocket, request: FastifyRequest) {
     connectionRegistry.getConversations(connectionId).forEach((convId) => {
       handleLeaveConversation(connectionId, payload.sub, convId);
     });
+    // Arrêter tous les streams RTMP actifs de cet utilisateur
+    stopAllRtmpStreams(payload.sub);
     connectionRegistry.remove(connectionId);
     console.log(`[WS] ${payload.username} disconnected — conn: ${connectionId}`);
   });
@@ -90,8 +93,19 @@ async function routeEvent(
       handleWebRTCSignal(connectionId, userId, socket, event.payload);
       break;
 
+    case "rtmp:start":
+      handleRtmpStart(connectionId, userId, socket, event.payload);
+      break;
+
+    case "rtmp:chunk":
+      handleRtmpChunk(connectionId, userId, socket, event.payload);
+      break;
+
+    case "rtmp:stop":
+      handleRtmpStop(connectionId, userId, socket, event.payload);
+      break;
+
     case "rtmp:status_request":
-      // Phase 10
       break;
 
     default:

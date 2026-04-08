@@ -14,6 +14,9 @@ export type ClientEventType =
   | "leave_conversation"
   | "chat:message"
   | "webrtc:signal"
+  | "rtmp:start"
+  | "rtmp:chunk"
+  | "rtmp:stop"
   | "rtmp:status_request";
 
 // ---- Événements envoyés par le SERVEUR ----

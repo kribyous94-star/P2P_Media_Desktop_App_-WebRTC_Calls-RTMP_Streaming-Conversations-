@@ -1,3 +1,2 @@
-// Phase 10 — RTMP module
-// vérification permissions, état du flux par conversation
-export {};
+export { handleRtmpStart, handleRtmpChunk, handleRtmpStop } from "./rtmp.ws.js";
+export { stopAll as stopAllRtmpStreams } from "./rtmp.service.js";

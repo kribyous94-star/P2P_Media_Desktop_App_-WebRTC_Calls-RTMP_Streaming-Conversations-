@@ -6,6 +6,7 @@ import { api, ApiError } from "@/lib/api.js";
 import ChatPanel from "@/components/ChatPanel.js";
 import CallPanel from "@/components/CallPanel.js";
 import MembersPanel from "@/components/MembersPanel.js";
+import RtmpPanel from "@/components/RtmpPanel.js";
 import styles from "./ConversationView.module.css";
 
 function AddMemberPopover({ conversationId }: { conversationId: string }) {
@@ -117,7 +118,10 @@ export default function ConversationView() {
           {/* Phase 4 : Chat texte */}
           <ChatPanel conversationId={conv.id} />
 
-          {/* Phase 7 : RTMP */}
+          {/* Phase 7 : RTMP — streaming vers Twitch, YouTube, etc. */}
+          {conv.type === "media_room" && (
+            <RtmpPanel conversationId={conv.id} />
+          )}
         </div>
 
         {/* Phase 6 : Panneau membres */}
