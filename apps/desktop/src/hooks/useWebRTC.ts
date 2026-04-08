@@ -51,11 +51,18 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
   const [hasVideo, setHasVideo]         = useState(false);
   const [callError, setCallError]       = useState<string | null>(null);
 
-  const pcRef              = useRef<RTCPeerConnection | null>(null);
-  const pendingCandidates  = useRef<RTCIceCandidateInit[]>([]);
-  const pendingOfferRef    = useRef<{ sdp: string; fromUserId: string } | null>(null);
-  const remoteUserIdRef    = useRef<string | null>(null);
-  const localStreamRef     = useRef<MediaStream | null>(null);
+  const pcRef                 = useRef<RTCPeerConnection | null>(null);
+  const pendingCandidates     = useRef<RTCIceCandidateInit[]>([]);
+  const pendingOfferRef       = useRef<{ sdp: string; fromUserId: string } | null>(null);
+  const remoteUserIdRef       = useRef<string | null>(null);
+  const localStreamRef        = useRef<MediaStream | null>(null);
+  /**
+   * Garde-fou : le handler onnegotiationneeded ne doit envoyer un call-reoffer
+   * qu'une fois la négociation initiale terminée (appel établi en "in-call").
+   * Sans ce flag, addTrack() pendant startCall/acceptCall déclenche un call-reoffer
+   * parasite qui corrompt l'échange offer/answer initial.
+   */
+  const negotiationReadyRef   = useRef(false);
 
   const wsOn   = useWsStore((s) => s.on);
   const wsSend = useWsStore((s) => s.send);
@@ -78,10 +85,11 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
 
   const cleanup = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    localStreamRef.current   = null;
-    remoteUserIdRef.current  = null;
-    pendingOfferRef.current  = null;
-    pendingCandidates.current = [];
+    localStreamRef.current      = null;
+    remoteUserIdRef.current     = null;
+    pendingOfferRef.current     = null;
+    pendingCandidates.current   = [];
+    negotiationReadyRef.current = false;
     pcRef.current?.close();
     pcRef.current = null;
 
@@ -123,8 +131,12 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
       }
     };
 
-    // Renegociation mid-call (track ajouté après la connexion initiale)
+    /**
+     * Renegociation mid-call uniquement.
+     * Ignoré pendant startCall/acceptCall grâce à negotiationReadyRef.
+     */
     pc.onnegotiationneeded = async () => {
+      if (!negotiationReadyRef.current) return;
       if (pc.signalingState !== "stable") return;
       const target = remoteUserIdRef.current;
       if (!target) return;
@@ -143,14 +155,19 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
 
   // ---- Helpers internes ----
 
-  function applyMedia(
+  /**
+   * Ajoute les tracks locaux au PC et des transceivers recvonly pour les médias
+   * non envoyés, afin que le SDP inclue les m-lines nécessaires à la réception.
+   * À appeler uniquement APRÈS setRemoteDescription sur le callee, ou avant
+   * createOffer sur le caller.
+   */
+  function applyMediaTracks(
     pc: RTCPeerConnection,
     stream: MediaStream,
     gotAudio: boolean,
     gotVideo: boolean,
   ) {
     stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-    // Transceivers recvonly pour les médias non envoyés (SDP inclura ces m-lines)
     if (!gotAudio) pc.addTransceiver("audio", { direction: "recvonly" });
     if (!gotVideo) pc.addTransceiver("video", { direction: "recvonly" });
   }
@@ -171,7 +188,8 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
     setStatus("calling");
 
     const pc = createPC(targetUserId);
-    applyMedia(pc, stream, gotAudio, gotVideo);
+    // negotiationReadyRef est false — addTransceiver/addTrack ne déclenchent pas de reoffer parasite
+    applyMediaTracks(pc, stream, gotAudio, gotVideo);
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -192,8 +210,11 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
     setVideoEnabled(gotVideo);
 
     const pc = createPC(pending.fromUserId);
-    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+    // negotiationReadyRef est false ici — pas de reoffer parasite
 
+    // Appliquer d'abord l'offre remote, PUIS ajouter les tracks locaux.
+    // Quand addTrack est appelé en "have-remote-offer", onnegotiationneeded
+    // est bloqué par negotiationReadyRef (et par le signalingState de toute façon).
     await pc.setRemoteDescription({ type: "offer", sdp: pending.sdp });
 
     for (const c of pendingCandidates.current) {
@@ -201,10 +222,14 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
     }
     pendingCandidates.current = [];
 
+    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     sendSignal("call-accept", pending.fromUserId, { sdp: answer.sdp });
+
     setStatus("in-call");
+    negotiationReadyRef.current = true; // renegociation mid-call activée
   }, [createPC, sendSignal]);
 
   const rejectCall = useCallback(() => {
@@ -233,7 +258,7 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
         localStreamRef.current?.addTrack(track);
         if (pcRef.current && localStreamRef.current) {
           pcRef.current.addTrack(track, localStreamRef.current);
-          // onnegotiationneeded se déclenchera automatiquement
+          // negotiationReadyRef est true ici → onnegotiationneeded enverra le call-reoffer
         }
         setHasAudio(true);
         setAudioEnabled(true);
@@ -245,7 +270,7 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
   }, [hasAudio]);
 
   /**
-   * Activate/désactive la caméra.
+   * Active/désactive la caméra.
    * Si le device n'est pas encore accordé, demande la permission.
    */
   const toggleVideo = useCallback(async () => {
@@ -309,6 +334,7 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
             }
             pendingCandidates.current = [];
             setStatus("in-call");
+            negotiationReadyRef.current = true; // caller : renegociation activée
             break;
           }
 
