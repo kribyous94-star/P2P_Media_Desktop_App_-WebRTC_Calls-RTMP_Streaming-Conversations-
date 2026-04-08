@@ -9,6 +9,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .empty {
@@ -18,4 +19,48 @@
   height: 100%;
   color: var(--color-text-muted);
   font-size: 0.9375rem;
+}
+
+/* Hamburger — caché sur desktop */
+.hamburger {
+  display: none;
+}
+
+/* Backdrop mobile */
+.backdrop {
+  display: none;
+}
+
+/* ---- Mobile ---- */
+@media (max-width: 768px) {
+  .hamburger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    top: 0.625rem;
+    left: 0.625rem;
+    z-index: 100;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    color: var(--color-text);
+    border-radius: 6px;
+    width: 36px;
+    height: 36px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+
+  .backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 199;
+  }
+
+  .main {
+    position: relative;
+  }
 }

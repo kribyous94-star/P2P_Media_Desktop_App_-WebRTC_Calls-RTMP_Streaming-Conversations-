@@ -7,6 +7,7 @@ export type SignalType =
   | "call-accept"
   | "call-reject"
   | "call-end"
+  | "call-reoffer"
   | "peer-joined"
   | "peer-left"
   | "media-state";

@@ -30,6 +30,8 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
     remoteStream,
     audioEnabled,
     videoEnabled,
+    hasAudio,
+    hasVideo,
     startCall,
     acceptCall,
     rejectCall,
@@ -47,17 +49,14 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
       .catch(() => {});
   }, [conversationId]);
 
-  // Fetch membres au montage
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
-  // Re-fetch quand un nouveau membre rejoint la room WS
   useEffect(() => {
     return wsOn("conversation:member_joined", (payload) => {
       if (payload.conversationId === conversationId) fetchMembers();
     });
   }, [wsOn, conversationId, fetchMembers]);
 
-  // Attach streams to video elements
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
@@ -73,7 +72,7 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
   const otherMember  = members.find((m) => m.userId !== currentUser?.id);
   const remoteMember = members.find((m) => m.userId === remoteUserId);
 
-  // ---- Incoming call overlay — rendu dans le contexte du .view (position absolute covers .main) ----
+  // ---- Incoming call overlay ----
   if (status === "incoming") {
     return (
       <div className={styles.incomingOverlay}>
@@ -93,6 +92,14 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
 
   // ---- Calling / In-call ----
   if (status === "calling" || status === "in-call") {
+    const audioTitle = !hasAudio
+      ? "Cliquer pour demander l'accès au micro"
+      : audioEnabled ? "Couper le micro" : "Activer le micro";
+
+    const videoTitle = !hasVideo
+      ? "Cliquer pour demander l'accès à la caméra"
+      : videoEnabled ? "Couper la caméra" : "Activer la caméra";
+
     return (
       <div className={styles.callView}>
         {/* Remote video */}
@@ -102,31 +109,45 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
           ) : (
             <div className={styles.waitingOverlay}>
               <span className={styles.waitingIcon}>📞</span>
-              <p>{status === "calling" ? `Appel en cours…` : "Connexion…"}</p>
+              <p>{status === "calling" ? "Appel en cours…" : "Connexion…"}</p>
             </div>
           )}
         </div>
 
-        {/* Local video (picture-in-picture) */}
-        {localStream && (
+        {/* Local video (picture-in-picture) — uniquement si caméra disponible */}
+        {hasVideo && localStream && (
           <video ref={localVideoRef} autoPlay playsInline muted className={styles.localVideo} />
         )}
+
+        {/* Indicateurs médias désactivés */}
+        <div className={styles.mediaIndicators}>
+          {!hasAudio && (
+            <span className={styles.indicatorBadge} title="Micro indisponible">🎙️✕</span>
+          )}
+          {!hasVideo && (
+            <span className={styles.indicatorBadge} title="Caméra indisponible">📷✕</span>
+          )}
+        </div>
 
         {/* Controls */}
         <div className={styles.controls}>
           <button
-            className={`${styles.ctrlBtn} ${!audioEnabled ? styles.ctrlOff : ""}`}
-            onClick={toggleAudio}
-            title={audioEnabled ? "Couper le micro" : "Activer le micro"}
+            className={`${styles.ctrlBtn} ${
+              !hasAudio ? styles.ctrlNoDevice : !audioEnabled ? styles.ctrlOff : ""
+            }`}
+            onClick={() => void toggleAudio()}
+            title={audioTitle}
           >
-            {audioEnabled ? "🎙️" : "🔇"}
+            {hasAudio ? (audioEnabled ? "🎙️" : "🔇") : "🎙️"}
           </button>
           <button
-            className={`${styles.ctrlBtn} ${!videoEnabled ? styles.ctrlOff : ""}`}
-            onClick={toggleVideo}
-            title={videoEnabled ? "Couper la caméra" : "Activer la caméra"}
+            className={`${styles.ctrlBtn} ${
+              !hasVideo ? styles.ctrlNoDevice : !videoEnabled ? styles.ctrlOff : ""
+            }`}
+            onClick={() => void toggleVideo()}
+            title={videoTitle}
           >
-            {videoEnabled ? "📷" : "📵"}
+            {hasVideo ? (videoEnabled ? "📷" : "📵") : "📷"}
           </button>
           <button className={`${styles.ctrlBtn} ${styles.hangUpBtn}`} onClick={hangUp} title="Raccrocher">
             📵 Raccrocher

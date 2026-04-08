@@ -29,6 +29,11 @@ html, body, #root {
   overflow: hidden;
 }
 
+/* Touch — évite le délai 300ms sur les boutons */
+button, a, [role="button"] {
+  touch-action: manipulation;
+}
+
 /* Scrollbars personnalisées */
 ::-webkit-scrollbar {
   width: 6px;

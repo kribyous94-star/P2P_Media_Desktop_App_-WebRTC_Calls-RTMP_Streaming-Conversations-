@@ -11,7 +11,12 @@ const TYPE_ICON: Record<string, string> = {
   media_room: "🎬",
 };
 
-export default function Sidebar() {
+interface Props {
+  mobileOpen?:    boolean;
+  onMobileClose?: () => void;
+}
+
+export default function Sidebar({ mobileOpen, onMobileClose }: Props) {
   const { conversations, activeId, fetchConversations, setActive, isLoading } = useConversationStore();
   const { user, logout } = useAuthStore();
   const [showCreate, setShowCreate] = useState(false);
@@ -21,8 +26,14 @@ export default function Sidebar() {
     void fetchConversations();
   }, [fetchConversations]);
 
+  function selectConversation(id: string) {
+    setActive(id);
+    navigate(`/conversations/${id}`);
+    onMobileClose?.();
+  }
+
   return (
-    <aside className={styles.sidebar}>
+    <aside className={`${styles.sidebar} ${mobileOpen ? styles.mobileOpen : ""}`}>
       {/* Header utilisateur */}
       <div className={styles.userBar}>
         <div className={styles.avatar}>
@@ -57,7 +68,7 @@ export default function Sidebar() {
             <button
               key={conv.id}
               className={`${styles.convItem} ${activeId === conv.id ? styles.active : ""}`}
-              onClick={() => { setActive(conv.id); navigate(`/conversations/${conv.id}`); }}
+              onClick={() => selectConversation(conv.id)}
             >
               <span className={styles.typeIcon}>{TYPE_ICON[conv.type] ?? "💬"}</span>
               <span className={styles.convName}>{conv.name}</span>
