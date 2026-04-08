@@ -57,17 +57,25 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
     });
   }, [wsOn, conversationId, fetchMembers]);
 
+  // status dans les deps : ontrack peut se déclencher AVANT que le status passe à
+  // "in-call" (donc avant que l'élément <video> existe dans le DOM). Sans status,
+  // le useEffect ne se relance pas au moment où la vidéo est montée, et srcObject
+  // n'est jamais assigné → écran noir, pas de son côté callee.
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
+    const video = localVideoRef.current;
+    if (video && localStream) {
+      video.srcObject = localStream;
+      void video.play().catch(() => {});
     }
-  }, [localStream]);
+  }, [localStream, status]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
+    const video = remoteVideoRef.current;
+    if (video && remoteStream) {
+      video.srcObject = remoteStream;
+      void video.play().catch(() => {});
     }
-  }, [remoteStream]);
+  }, [remoteStream, status]);
 
   const otherMember  = members.find((m) => m.userId !== currentUser?.id);
   const remoteMember = members.find((m) => m.userId === remoteUserId);
