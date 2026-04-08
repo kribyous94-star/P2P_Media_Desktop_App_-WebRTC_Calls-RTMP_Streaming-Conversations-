@@ -3,42 +3,65 @@ import type { WsServerEvent, ServerPayloadMap, ServerEventType } from "@p2p/shar
 
 type WsStatus = "disconnected" | "connecting" | "connected" | "error";
 
-// Handlers typés par event
 type EventHandler<T extends ServerEventType> = (payload: ServerPayloadMap[T]) => void;
 type AnyHandler = (payload: unknown) => void;
+
+const HEARTBEAT_MS  = 25_000; // ping toutes les 25 s (nginx timeout = 60 s)
+const RECONNECT_MS  = 3_000;  // délai de reconnexion après une déco inattendue
 
 interface WsState {
   status: WsStatus;
   socket: WebSocket | null;
 
-  connect: (url: string, token: string) => void;
+  connect:    (url: string, token: string) => void;
   disconnect: () => void;
-  send: (type: string, payload: unknown) => void;
+  send:       (type: string, payload: unknown) => void;
 
-  // Registre des handlers par event type
-  _handlers: Map<string, Set<AnyHandler>>;
+  _handlers:  Map<string, Set<AnyHandler>>;
   on: <T extends ServerEventType>(type: T, handler: EventHandler<T>) => () => void;
   _emit: (event: WsServerEvent) => void;
+
+  // Internals pour reconnexion
+  _url:                  string | null;
+  _token:                string | null;
+  _intentionalClose:     boolean;
+  _reconnectTimer:       ReturnType<typeof setTimeout> | null;
+  _heartbeatTimer:       ReturnType<typeof setInterval> | null;
 }
 
 export const useWsStore = create<WsState>()((set, get) => ({
-  status: "disconnected",
-  socket: null,
+  status:  "disconnected",
+  socket:  null,
   _handlers: new Map(),
+  _url:    null,
+  _token:  null,
+  _intentionalClose: false,
+  _reconnectTimer:   null,
+  _heartbeatTimer:   null,
 
   connect: (url, token) => {
-    const existing = get().socket;
-    if (existing) {
-      existing.close();
+    // Annuler toute reconnexion en attente
+    const prev = get();
+    if (prev._reconnectTimer) clearTimeout(prev._reconnectTimer);
+    // Fermer le socket existant sans déclencher de reconnexion
+    if (prev.socket) {
+      set({ _intentionalClose: true });
+      prev.socket.close();
     }
+    if (prev._heartbeatTimer) clearInterval(prev._heartbeatTimer);
 
-    set({ status: "connecting" });
+    set({ status: "connecting", _url: url, _token: token, _intentionalClose: false });
 
-    // Token envoyé dans le query param (pas dans les headers — WebSocket ne les supporte pas)
     const ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`);
 
     ws.onopen = () => {
-      set({ status: "connected", socket: ws });
+      // Démarrer le heartbeat pour passer au-dessus du proxy_read_timeout nginx (60 s)
+      const heartbeatTimer = setInterval(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "ping", payload: {} }));
+        }
+      }, HEARTBEAT_MS);
+      set({ status: "connected", socket: ws, _heartbeatTimer: heartbeatTimer });
     };
 
     ws.onmessage = (event: MessageEvent) => {
@@ -55,17 +78,34 @@ export const useWsStore = create<WsState>()((set, get) => ({
     };
 
     ws.onclose = () => {
-      set({ status: "disconnected", socket: null });
+      const { _heartbeatTimer, _intentionalClose, _url, _token } = get();
+      if (_heartbeatTimer) clearInterval(_heartbeatTimer);
+      set({ status: "disconnected", socket: null, _heartbeatTimer: null });
+
+      if (_intentionalClose) {
+        set({ _intentionalClose: false });
+        return;
+      }
+
+      // Reconnexion automatique
+      if (_url && _token) {
+        console.log(`[WS] Connexion perdue — reconnexion dans ${RECONNECT_MS / 1000} s…`);
+        const timer = setTimeout(() => {
+          get().connect(_url, _token);
+        }, RECONNECT_MS);
+        set({ _reconnectTimer: timer });
+      }
     };
 
     set({ socket: ws });
   },
 
   disconnect: () => {
-    const { socket } = get();
-    if (socket) {
-      socket.close();
-    }
+    const { socket, _heartbeatTimer, _reconnectTimer } = get();
+    if (_reconnectTimer) clearTimeout(_reconnectTimer);
+    if (_heartbeatTimer) clearInterval(_heartbeatTimer);
+    set({ _intentionalClose: true, _url: null, _token: null, _reconnectTimer: null, _heartbeatTimer: null });
+    if (socket) socket.close();
     set({ socket: null, status: "disconnected" });
   },
 
@@ -80,13 +120,9 @@ export const useWsStore = create<WsState>()((set, get) => ({
 
   on: (type, handler) => {
     const { _handlers } = get();
-    if (!_handlers.has(type)) {
-      _handlers.set(type, new Set());
-    }
+    if (!_handlers.has(type)) _handlers.set(type, new Set());
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     _handlers.get(type)!.add(handler as any);
-
-    // Retourner une fonction de nettoyage
     return () => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       _handlers.get(type)?.delete(handler as any);
@@ -94,10 +130,7 @@ export const useWsStore = create<WsState>()((set, get) => ({
   },
 
   _emit: (event) => {
-    const { _handlers } = get();
-    const handlers = _handlers.get(event.type);
-    if (handlers) {
-      handlers.forEach((h) => h(event.payload));
-    }
+    const handlers = get()._handlers.get(event.type);
+    if (handlers) handlers.forEach((h) => h(event.payload));
   },
 }));

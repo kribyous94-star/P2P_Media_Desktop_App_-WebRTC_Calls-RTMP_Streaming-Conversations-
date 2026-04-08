@@ -4,15 +4,15 @@ import { useAuthStore } from "@/stores/auth.store.js";
 import { useWsStore } from "@/stores/ws.store.js";
 import { useConversationStore } from "@/stores/conversation.store.js";
 import { useCallStore } from "@/stores/call.store.js";
-import type { SignalMessage } from "@p2p/shared";
 import Sidebar from "@/components/Sidebar.js";
 import IncomingCallBanner from "@/components/IncomingCallBanner.js";
 import ConversationView from "./ConversationView.js";
 import styles from "./MainLayout.module.css";
 
 /**
- * Listener global d'appels WebRTC entrants.
- * Actif tant que l'utilisateur est authentifié, quelle que soit la vue ouverte.
+ * Listener global d'appels entrants.
+ * Détecte les call:state_update depuis n'importe quelle conversation
+ * et stocke la notification dans le call store (affiché par IncomingCallBanner).
  */
 function GlobalCallListener() {
   const wsOn        = useWsStore((s) => s.on);
@@ -22,25 +22,25 @@ function GlobalCallListener() {
   useEffect(() => {
     if (!currentUser) return;
 
-    return wsOn("webrtc:signal", (signal: SignalMessage) => {
-      if (signal.toPeerId && signal.toPeerId !== currentUser.id) return;
+    return wsOn("call:state_update", (update) => {
+      const activeId = useConversationStore.getState().activeId;
 
-      if (signal.type === "call-request") {
-        const activeId = useConversationStore.getState().activeId;
-        if (activeId === signal.conversationId) return;
+      // Ignorer si l'utilisateur est déjà sur cette conversation (CallPanel gère ça)
+      if (activeId === update.conversationId) return;
 
-        const { sdp, callerName } = signal.payload as { sdp: string; callerName?: string };
+      const { newcomer, callerName } = update;
+
+      if (newcomer && newcomer !== currentUser.id) {
+        // Quelqu'un vient de rejoindre une salle d'appel dans une autre conversation
         setIncoming({
-          conversationId: signal.conversationId,
-          fromUserId:     signal.fromPeerId,
-          callerName:     callerName ?? signal.fromPeerId,
-          sdp,
+          conversationId: update.conversationId,
+          fromUserId:     newcomer,
+          callerName:     callerName ?? newcomer,
         });
-      }
-
-      if (signal.type === "call-end" || signal.type === "call-reject") {
+      } else if (update.participants.length === 0) {
+        // Plus personne dans l'appel → effacer la notification si elle concerne cette conversation
         const current = useCallStore.getState().incoming;
-        if (current?.conversationId === signal.conversationId) {
+        if (current?.conversationId === update.conversationId) {
           setIncoming(null);
         }
       }
@@ -58,7 +58,7 @@ export default function MainLayout() {
       <GlobalCallListener />
       <IncomingCallBanner />
 
-      {/* Backdrop mobile (ferme la sidebar au tap) */}
+      {/* Backdrop mobile */}
       {sidebarOpen && (
         <div
           className={styles.backdrop}
@@ -70,7 +70,7 @@ export default function MainLayout() {
       <Sidebar mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} />
 
       <main className={styles.main}>
-        {/* Bouton hamburger — visible uniquement sur mobile */}
+        {/* Hamburger — visible uniquement sur mobile */}
         <button
           className={styles.hamburger}
           onClick={() => setSidebarOpen((v) => !v)}

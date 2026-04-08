@@ -6,12 +6,13 @@
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 14px;
-  padding: 1rem 1.25rem;
+  padding: 0.875rem 1.125rem;
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 1rem;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
   animation: slideIn 0.2s ease-out;
+  max-width: calc(100vw - 2rem);
 }
 
 @keyframes slideIn {
@@ -23,11 +24,13 @@
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .icon {
-  font-size: 1.75rem;
-  animation: ring 1s ease-in-out infinite;
+  font-size: 1.5rem;
+  flex-shrink: 0;
+  animation: ring 1.2s ease-in-out infinite;
 }
 
 @keyframes ring {
@@ -39,7 +42,7 @@
 }
 
 .title {
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -47,40 +50,62 @@
 }
 
 .sub {
-  font-size: 1rem;
+  font-size: 0.9375rem;
   font-weight: 700;
   margin: 0.125rem 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
 }
 
 .actions {
   display: flex;
-  gap: 0.625rem;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
-.rejectBtn {
-  background: var(--color-danger);
-  border: none;
-  color: #fff;
-  border-radius: 50%;
-  width: 48px;
-  height: 48px;
+.dismissBtn {
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
   cursor: pointer;
-  font-size: 1.1rem;
+  font-size: 0.9rem;
   font-weight: 700;
-  transition: filter 0.15s;
+  transition: background 0.15s;
+  touch-action: manipulation;
 }
-.rejectBtn:hover { filter: brightness(0.85); }
+.dismissBtn:hover { background: var(--color-border); }
 
 .acceptBtn {
-  background: #22c55e;
+  background: var(--color-primary);
   border: none;
   color: #fff;
-  border-radius: 50%;
-  width: 48px;
-  height: 48px;
+  border-radius: 8px;
+  padding: 0 1rem;
+  height: 36px;
   cursor: pointer;
-  font-size: 1.1rem;
-  font-weight: 700;
-  transition: filter 0.15s;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background 0.15s;
+  white-space: nowrap;
+  touch-action: manipulation;
 }
-.acceptBtn:hover { filter: brightness(0.85); }
+.acceptBtn:hover { background: var(--color-primary-hover); }
+
+/* Mobile */
+@media (max-width: 768px) {
+  .banner {
+    bottom: 1rem;
+    right: 1rem;
+    left: 1rem;
+    max-width: none;
+  }
+
+  .sub {
+    max-width: none;
+  }
+}

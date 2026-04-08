@@ -8,6 +8,8 @@ export type SignalType =
   | "call-reject"
   | "call-end"
   | "call-reoffer"
+  | "call-announce"   // rejoindre la salle d'appel (diffusion)
+  | "call-leave"      // quitter sans forcer les autres à raccrocher
   | "peer-joined"
   | "peer-left"
   | "media-state";

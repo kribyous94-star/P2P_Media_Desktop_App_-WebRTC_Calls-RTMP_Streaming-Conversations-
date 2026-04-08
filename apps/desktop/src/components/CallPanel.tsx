@@ -1,38 +1,58 @@
-import { useEffect, useRef, useState, useCallback } from "react";
-import { api } from "@/lib/api.js";
+import { useEffect, useRef, useCallback } from "react";
 import { useAuthStore } from "@/stores/auth.store.js";
 import { useWsStore } from "@/stores/ws.store.js";
 import { useWebRTC } from "@/hooks/useWebRTC.js";
 import styles from "./CallPanel.module.css";
-
-interface Member {
-  userId:      string;
-  username:    string;
-  displayName: string;
-  role:        string;
-}
 
 interface Props {
   conversationId:   string;
   conversationName: string;
 }
 
+/** Composant de rendu d'un flux vidéo distant. */
+function PeerVideo({
+  stream,
+  status,
+}: {
+  stream: MediaStream;
+  status: string;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video && stream) {
+      video.srcObject = stream;
+      void video.play().catch(() => {});
+    }
+  }, [stream, status]);
+
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      className={styles.remoteVideo}
+    />
+  );
+}
+
 export default function CallPanel({ conversationId, conversationName }: Props) {
   const currentUser = useAuthStore((s) => s.user);
   const wsOn        = useWsStore((s) => s.on);
-  const [members, setMembers] = useState<Member[]>([]);
 
   const {
     status,
+    incomingFrom,
     callError,
-    remoteUserId,
     localStream,
-    remoteStream,
+    remoteStreams,
+    activeParticipants,
     audioEnabled,
     videoEnabled,
     hasAudio,
     hasVideo,
-    startCall,
+    joinCall,
     acceptCall,
     rejectCall,
     hangUp,
@@ -40,27 +60,9 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
     toggleVideo,
   } = useWebRTC(conversationId, currentUser?.id ?? "", currentUser?.displayName ?? currentUser?.username);
 
-  const localVideoRef  = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
 
-  const fetchMembers = useCallback(() => {
-    api.get<{ members: Member[] }>(`/api/conversations/${conversationId}/members`)
-      .then((res) => setMembers(res.members))
-      .catch(() => {});
-  }, [conversationId]);
-
-  useEffect(() => { fetchMembers(); }, [fetchMembers]);
-
-  useEffect(() => {
-    return wsOn("conversation:member_joined", (payload) => {
-      if (payload.conversationId === conversationId) fetchMembers();
-    });
-  }, [wsOn, conversationId, fetchMembers]);
-
-  // status dans les deps : ontrack peut se déclencher AVANT que le status passe à
-  // "in-call" (donc avant que l'élément <video> existe dans le DOM). Sans status,
-  // le useEffect ne se relance pas au moment où la vidéo est montée, et srcObject
-  // n'est jamais assigné → écran noir, pas de son côté callee.
+  // Sync local video srcObject
   useEffect(() => {
     const video = localVideoRef.current;
     if (video && localStream) {
@@ -69,95 +71,88 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
     }
   }, [localStream, status]);
 
+  // Nettoyer l'indicateur global d'appel entrant quand on monte sur la bonne conversation
   useEffect(() => {
-    const video = remoteVideoRef.current;
-    if (video && remoteStream) {
-      video.srcObject = remoteStream;
-      void video.play().catch(() => {});
-    }
-  }, [remoteStream, status]);
+    return wsOn("webrtc:signal" as never, () => {});
+  }, [wsOn]);
 
-  const otherMember  = members.find((m) => m.userId !== currentUser?.id);
-  const remoteMember = members.find((m) => m.userId === remoteUserId);
+  const audioTitle = !hasAudio
+    ? "Cliquer pour demander l'accès au micro"
+    : audioEnabled ? "Couper le micro" : "Activer le micro";
 
-  // ---- Incoming call overlay ----
-  if (status === "incoming") {
+  const videoTitle = !hasVideo
+    ? "Cliquer pour demander l'accès à la caméra"
+    : videoEnabled ? "Couper la caméra" : "Activer la caméra";
+
+  // ---- Appel entrant (notification 1:1) ----
+  if (status === "idle" && incomingFrom) {
     return (
       <div className={styles.incomingOverlay}>
         <div className={styles.incomingBox}>
           <p className={styles.incomingTitle}>Appel entrant</p>
-          <p className={styles.incomingFrom}>
-            {remoteMember?.displayName ?? remoteMember?.username ?? remoteUserId}
-          </p>
+          <p className={styles.incomingFrom}>{incomingFrom}</p>
           <div className={styles.incomingActions}>
             <button className={styles.rejectBtn} onClick={rejectCall} title="Refuser">✕</button>
-            <button className={styles.acceptBtn} onClick={() => void acceptCall()} title="Accepter">✓</button>
+            <button className={styles.acceptBtn} onClick={acceptCall} title="Accepter">✓</button>
           </div>
         </div>
       </div>
     );
   }
 
-  // ---- Calling / In-call ----
-  if (status === "calling" || status === "in-call") {
-    const audioTitle = !hasAudio
-      ? "Cliquer pour demander l'accès au micro"
-      : audioEnabled ? "Couper le micro" : "Activer le micro";
-
-    const videoTitle = !hasVideo
-      ? "Cliquer pour demander l'accès à la caméra"
-      : videoEnabled ? "Couper la caméra" : "Activer la caméra";
+  // ---- Appel actif ----
+  if (status === "in-call") {
+    const remoteEntries = [...remoteStreams.entries()];
+    const alone         = remoteEntries.length === 0;
 
     return (
       <div className={styles.callView}>
-        {/* Remote video */}
-        <div className={styles.remoteWrapper}>
-          {remoteStream ? (
-            <video ref={remoteVideoRef} autoPlay playsInline className={styles.remoteVideo} />
-          ) : (
+        {/* Grille vidéos distantes */}
+        <div className={`${styles.remoteGrid} ${alone ? styles.remoteGridAlone : ""}`}>
+          {alone ? (
             <div className={styles.waitingOverlay}>
               <span className={styles.waitingIcon}>📞</span>
-              <p>{status === "calling" ? "Appel en cours…" : "Connexion…"}</p>
+              <p>En attente de participants…</p>
             </div>
+          ) : (
+            remoteEntries.map(([userId, stream]) => (
+              <PeerVideo key={userId} stream={stream} status={status} />
+            ))
           )}
         </div>
 
-        {/* Local video (picture-in-picture) — uniquement si caméra disponible */}
+        {/* Vidéo locale PiP */}
         {hasVideo && localStream && (
           <video ref={localVideoRef} autoPlay playsInline muted className={styles.localVideo} />
         )}
 
-        {/* Indicateurs médias désactivés */}
+        {/* Indicateurs médias indisponibles */}
         <div className={styles.mediaIndicators}>
-          {!hasAudio && (
-            <span className={styles.indicatorBadge} title="Micro indisponible">🎙️✕</span>
-          )}
-          {!hasVideo && (
-            <span className={styles.indicatorBadge} title="Caméra indisponible">📷✕</span>
-          )}
+          {!hasAudio && <span className={styles.indicatorBadge} title="Micro indisponible">🎙️✕</span>}
+          {!hasVideo && <span className={styles.indicatorBadge} title="Caméra indisponible">📷✕</span>}
         </div>
 
-        {/* Controls */}
+        {/* Contrôles */}
         <div className={styles.controls}>
           <button
-            className={`${styles.ctrlBtn} ${
-              !hasAudio ? styles.ctrlNoDevice : !audioEnabled ? styles.ctrlOff : ""
-            }`}
+            className={`${styles.ctrlBtn} ${!hasAudio ? styles.ctrlNoDevice : !audioEnabled ? styles.ctrlOff : ""}`}
             onClick={() => void toggleAudio()}
             title={audioTitle}
           >
             {hasAudio ? (audioEnabled ? "🎙️" : "🔇") : "🎙️"}
           </button>
           <button
-            className={`${styles.ctrlBtn} ${
-              !hasVideo ? styles.ctrlNoDevice : !videoEnabled ? styles.ctrlOff : ""
-            }`}
+            className={`${styles.ctrlBtn} ${!hasVideo ? styles.ctrlNoDevice : !videoEnabled ? styles.ctrlOff : ""}`}
             onClick={() => void toggleVideo()}
             title={videoTitle}
           >
             {hasVideo ? (videoEnabled ? "📷" : "📵") : "📷"}
           </button>
-          <button className={`${styles.ctrlBtn} ${styles.hangUpBtn}`} onClick={hangUp} title="Raccrocher">
+          <button
+            className={`${styles.ctrlBtn} ${styles.hangUpBtn}`}
+            onClick={hangUp}
+            title="Raccrocher"
+          >
             📵 Raccrocher
           </button>
         </div>
@@ -166,17 +161,33 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
   }
 
   // ---- Idle — barre d'appel ----
-  if (!otherMember) return null;
+  const othersInCall = activeParticipants.filter((id) => id !== currentUser?.id);
+  const callActive   = othersInCall.length > 0;
 
   return (
     <div className={styles.idleBar}>
-      <button
-        className={styles.callBtn}
-        onClick={() => void startCall(otherMember.userId)}
-        title={`Appeler dans ${conversationName}`}
-      >
-        📞 Démarrer un appel
-      </button>
+      {callActive ? (
+        <>
+          <span className={styles.callActiveBadge}>
+            🔴 {othersInCall.length} participant{othersInCall.length > 1 ? "s" : ""} dans l'appel
+          </span>
+          <button
+            className={styles.joinBtn}
+            onClick={() => void joinCall()}
+            title={`Rejoindre l'appel dans ${conversationName}`}
+          >
+            Rejoindre
+          </button>
+        </>
+      ) : (
+        <button
+          className={styles.callBtn}
+          onClick={() => void joinCall()}
+          title={`Démarrer un appel dans ${conversationName}`}
+        >
+          📞 Démarrer un appel
+        </button>
+      )}
       {callError && <span className={styles.callError}>{callError}</span>}
     </div>
   );

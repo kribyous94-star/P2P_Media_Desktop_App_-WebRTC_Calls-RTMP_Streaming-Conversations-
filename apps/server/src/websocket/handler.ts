@@ -5,7 +5,7 @@ import { connectionRegistry } from "./registry.js";
 import { decodeToken } from "../lib/jwt.js";
 import { handleJoinConversation, handleLeaveConversation } from "../modules/conversations/conversations.ws.js";
 import { handleChatMessage } from "../modules/messages/messages.ws.js";
-import { handleWebRTCSignal } from "../modules/webrtc/webrtc.ws.js";
+import { handleWebRTCSignal, cleanupUserCalls } from "../modules/webrtc/webrtc.ws.js";
 import { handleRtmpStart, handleRtmpChunk, handleRtmpStop, stopAllRtmpStreams } from "../modules/rtmp/index.js";
 
 export async function wsHandler(socket: WebSocket, request: FastifyRequest) {
@@ -52,6 +52,8 @@ export async function wsHandler(socket: WebSocket, request: FastifyRequest) {
     connectionRegistry.getConversations(connectionId).forEach((convId) => {
       handleLeaveConversation(connectionId, payload.sub, convId);
     });
+    // Retirer l'utilisateur des appels actifs
+    cleanupUserCalls(payload.sub);
     // Arrêter tous les streams RTMP actifs de cet utilisateur
     stopAllRtmpStreams(payload.sub);
     connectionRegistry.remove(connectionId);
@@ -107,6 +109,9 @@ async function routeEvent(
 
     case "rtmp:status_request":
       break;
+
+    case "ping":
+      break; // heartbeat client — maintient la connexion nginx
 
     default:
       socket.send(JSON.stringify({

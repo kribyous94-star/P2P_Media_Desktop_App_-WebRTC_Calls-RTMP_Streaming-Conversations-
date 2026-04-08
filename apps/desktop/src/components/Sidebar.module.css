@@ -162,6 +162,18 @@
   text-overflow: ellipsis;
 }
 
+.callBadge {
+  font-size: 0.6rem;
+  flex-shrink: 0;
+  line-height: 1;
+  animation: callPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes callPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
 .role {
   font-size: 0.65rem;
   color: var(--color-text-muted);

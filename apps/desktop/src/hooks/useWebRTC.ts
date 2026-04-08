@@ -3,7 +3,7 @@ import { useWsStore } from "@/stores/ws.store.js";
 import { useCallStore } from "@/stores/call.store.js";
 import type { SignalMessage, SignalType } from "@p2p/shared";
 
-export type CallStatus = "idle" | "calling" | "incoming" | "in-call";
+export type CallStatus = "idle" | "in-call";
 
 const ICE_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -11,15 +11,11 @@ const ICE_SERVERS: RTCIceServer[] = [
 ];
 
 interface MediaResult {
-  stream: MediaStream;
+  stream:   MediaStream;
   hasAudio: boolean;
   hasVideo: boolean;
 }
 
-/**
- * Acquiert le micro et/ou la caméra de manière indépendante.
- * Ne lève jamais d'exception — renvoie un stream vide si aucune permission.
- */
 async function getMediaSafe(): Promise<MediaResult> {
   const stream = new MediaStream();
   let gotAudio = false;
@@ -29,67 +25,86 @@ async function getMediaSafe(): Promise<MediaResult> {
     const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     const t = s.getAudioTracks()[0];
     if (t) { stream.addTrack(t); gotAudio = true; }
-  } catch { /* micro refusé ou absent */ }
+  } catch { /* micro refusé */ }
 
   try {
     const s = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
     const t = s.getVideoTracks()[0];
     if (t) { stream.addTrack(t); gotVideo = true; }
-  } catch { /* caméra refusée ou absente */ }
+  } catch { /* caméra refusée */ }
 
   console.log("[WebRTC] getMediaSafe →", { gotAudio, gotVideo });
   return { stream, hasAudio: gotAudio, hasVideo: gotVideo };
 }
 
-export function useWebRTC(conversationId: string, currentUserId: string, callerName?: string) {
-  const [status, setStatus]             = useState<CallStatus>("idle");
-  const [remoteUserId, setRemoteUserId] = useState<string | null>(null);
-  const [localStream, setLocalStream]   = useState<MediaStream | null>(null);
-  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const [videoEnabled, setVideoEnabled] = useState(false);
-  const [hasAudio, setHasAudio]         = useState(false);
-  const [hasVideo, setHasVideo]         = useState(false);
-  const [callError, setCallError]       = useState<string | null>(null);
+export function useWebRTC(
+  conversationId: string,
+  currentUserId:  string,
+  callerName?:    string,
+) {
+  // ---- État ----
+  const [status,        setStatus]       = useState<CallStatus>("idle");
+  const [incomingFrom,  setIncomingFrom] = useState<string | null>(null); // appel 1:1 entrant
+  const [localStream,   setLocalStream]  = useState<MediaStream | null>(null);
+  const [remoteStreams, setRemoteStreams] = useState<Map<string, MediaStream>>(new Map());
+  const [audioEnabled,  setAudioEnabled] = useState(false);
+  const [videoEnabled,  setVideoEnabled] = useState(false);
+  const [hasAudio,      setHasAudio]     = useState(false);
+  const [hasVideo,      setHasVideo]     = useState(false);
+  const [callError,     setCallError]    = useState<string | null>(null);
+  // Participants actifs dans la salle d'appel (depuis le serveur)
+  const [activeParticipants, setActiveParticipants] = useState<string[]>([]);
 
-  const pcRef              = useRef<RTCPeerConnection | null>(null);
-  const pendingCandidates  = useRef<RTCIceCandidateInit[]>([]);
-  const pendingOfferRef    = useRef<{ sdp: string; fromUserId: string } | null>(null);
-  const remoteUserIdRef    = useRef<string | null>(null);
-  const localStreamRef     = useRef<MediaStream | null>(null);
+  // ---- Refs ----
+  const pcsRef              = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const localStreamRef      = useRef<MediaStream | null>(null);
+  const statusRef           = useRef<CallStatus>("idle");
+  const pendingCandidates   = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
 
   const wsOn   = useWsStore((s) => s.on);
   const wsSend = useWsStore((s) => s.send);
 
+  // Garder statusRef synchronisé
+  useEffect(() => { statusRef.current = status; }, [status]);
+
   // ---- Helpers ----
 
   const sendSignal = useCallback((
-    type: SignalType,
-    targetUserId: string,
-    payload: unknown
+    type:         SignalType,
+    targetUserId: string | null,   // null = diffusion
+    payload:      unknown,
   ) => {
     wsSend("webrtc:signal", {
       type,
       conversationId,
       fromPeerId: currentUserId,
-      toPeerId:   targetUserId,
+      toPeerId:   targetUserId ?? undefined,
       payload,
     } as SignalMessage);
   }, [wsSend, conversationId, currentUserId]);
 
+  const removePeer = useCallback((remoteUserId: string) => {
+    pcsRef.current.get(remoteUserId)?.close();
+    pcsRef.current.delete(remoteUserId);
+    pendingCandidates.current.delete(remoteUserId);
+    setRemoteStreams((prev) => {
+      const next = new Map(prev);
+      next.delete(remoteUserId);
+      return next;
+    });
+  }, []);
+
   const cleanup = useCallback(() => {
     localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    localStreamRef.current    = null;
-    remoteUserIdRef.current   = null;
-    pendingOfferRef.current   = null;
-    pendingCandidates.current = [];
-    pcRef.current?.close();
-    pcRef.current = null;
+    localStreamRef.current = null;
+    for (const pc of pcsRef.current.values()) pc.close();
+    pcsRef.current.clear();
+    pendingCandidates.current.clear();
 
     setStatus("idle");
-    setRemoteUserId(null);
+    setIncomingFrom(null);
     setLocalStream(null);
-    setRemoteStream(null);
+    setRemoteStreams(new Map());
     setAudioEnabled(false);
     setVideoEnabled(false);
     setHasAudio(false);
@@ -99,14 +114,15 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
   const cleanupRef = useRef(cleanup);
   useEffect(() => { cleanupRef.current = cleanup; });
 
-  const createPC = useCallback((targetUserId: string): RTCPeerConnection => {
-    pcRef.current?.close();
+  /** Crée (ou remplace) un RTCPeerConnection pour ce pair distant. */
+  const createPC = useCallback((remoteUserId: string): RTCPeerConnection => {
+    pcsRef.current.get(remoteUserId)?.close();
 
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 
     pc.onicecandidate = ({ candidate }) => {
       if (candidate) {
-        sendSignal("ice-candidate", targetUserId, {
+        sendSignal("ice-candidate", remoteUserId, {
           candidate:     candidate.candidate,
           sdpMid:        candidate.sdpMid,
           sdpMLineIndex: candidate.sdpMLineIndex,
@@ -114,99 +130,48 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
       }
     };
 
-    pc.onicegatheringstatechange = () => {
-      console.log("[WebRTC] ICE gathering:", pc.iceGatheringState);
-    };
-
-    pc.oniceconnectionstatechange = () => {
-      console.log("[WebRTC] ICE connection:", pc.iceConnectionState);
-    };
-
     pc.onconnectionstatechange = () => {
-      console.log("[WebRTC] Connection state:", pc.connectionState);
+      console.log(`[WebRTC] ${remoteUserId} connection:`, pc.connectionState);
       if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
-        cleanupRef.current();
+        removePeer(remoteUserId);
       }
     };
 
-    pc.onsignalingstatechange = () => {
-      console.log("[WebRTC] Signaling state:", pc.signalingState);
-    };
-
-    /**
-     * ontrack : on utilise event.track pour construire le stream distant manuellement.
-     * event.streams[0] est parfois undefined dans certains navigateurs/contextes.
-     */
     pc.ontrack = (event) => {
-      console.log("[WebRTC] ontrack:", event.track.kind, "streams:", event.streams.length);
-      setRemoteStream((prev) => {
-        const s = prev ?? new MediaStream();
-        // Éviter d'ajouter le même track deux fois
-        if (!s.getTracks().find((t) => t.id === event.track.id)) {
-          s.addTrack(event.track);
+      console.log(`[WebRTC] ontrack from ${remoteUserId}:`, event.track.kind);
+      setRemoteStreams((prev) => {
+        const existing = prev.get(remoteUserId) ?? new MediaStream();
+        if (!existing.getTracks().find((t) => t.id === event.track.id)) {
+          existing.addTrack(event.track);
         }
-        // Retourner un nouvel objet pour déclencher le re-render
-        return new MediaStream(s.getTracks());
+        const next = new Map(prev);
+        next.set(remoteUserId, new MediaStream(existing.getTracks()));
+        return next;
       });
     };
 
-    /**
-     * NOTE : onnegotiationneeded n'est PAS utilisé ici.
-     * La renégociation mid-call est déclenchée EXPLICITEMENT dans toggleAudio/toggleVideo,
-     * ce qui évite les reoffers parasites juste après la négociation initiale.
-     */
-
-    pcRef.current = pc;
+    pcsRef.current.set(remoteUserId, pc);
     return pc;
-  }, [sendSignal]);
+  }, [sendSignal, removePeer]);
 
-  // ---- Helpers internes ----
-
-  /**
-   * Ajoute les tracks locaux au PC + transceivers recvonly pour les médias non envoyés.
-   * Garantit que le SDP inclut toutes les m-lines nécessaires à la réception bidirectionnelle.
-   */
-  function applyMediaTracks(
-    pc: RTCPeerConnection,
-    stream: MediaStream,
-    gotAudio: boolean,
-    gotVideo: boolean,
-  ) {
-    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-    if (!gotAudio) pc.addTransceiver("audio", { direction: "recvonly" });
-    if (!gotVideo) pc.addTransceiver("video", { direction: "recvonly" });
+  /** Ajoute les tracks locaux au PC si pas déjà fait. */
+  function addLocalTracks(pc: RTCPeerConnection) {
+    const stream = localStreamRef.current;
+    if (!stream) return;
+    const senderTracks = pc.getSenders().map((s) => s.track?.id);
+    stream.getTracks().forEach((t) => {
+      if (!senderTracks.includes(t.id)) pc.addTrack(t, stream);
+    });
+    // Ajouter des transceivers recvonly pour les médias manquants
+    const hasAudioTrack = stream.getAudioTracks().length > 0;
+    const hasVideoTrack = stream.getVideoTracks().length > 0;
+    if (!hasAudioTrack) pc.addTransceiver("audio", { direction: "recvonly" });
+    if (!hasVideoTrack) pc.addTransceiver("video", { direction: "recvonly" });
   }
 
-  // ---- Public API ----
-
-  const startCall = useCallback(async (targetUserId: string) => {
+  // ---- Acquérir les médias + rejoindre la salle ----
+  const joinCall = useCallback(async () => {
     setCallError(null);
-    const { stream, hasAudio: gotAudio, hasVideo: gotVideo } = await getMediaSafe();
-    localStreamRef.current  = stream;
-    remoteUserIdRef.current = targetUserId;
-    setLocalStream(gotVideo ? stream : null);
-    setRemoteUserId(targetUserId);
-    setHasAudio(gotAudio);
-    setHasVideo(gotVideo);
-    setAudioEnabled(gotAudio);
-    setVideoEnabled(gotVideo);
-    setStatus("calling");
-
-    const pc = createPC(targetUserId);
-    applyMediaTracks(pc, stream, gotAudio, gotVideo);
-
-    console.log("[WebRTC] createOffer…");
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    console.log("[WebRTC] Offer SDP (audio lines):", offer.sdp?.split("\n").filter(l => l.startsWith("m=") || l.includes("sendrecv") || l.includes("recvonly")).join(" | "));
-    sendSignal("call-request", targetUserId, { sdp: offer.sdp, callerName: callerName ?? currentUserId });
-  }, [createPC, sendSignal, callerName, currentUserId]);
-
-  const acceptCall = useCallback(async () => {
-    const pending = pendingOfferRef.current;
-    if (!pending) return;
-    setCallError(null);
-
     const { stream, hasAudio: gotAudio, hasVideo: gotVideo } = await getMediaSafe();
     localStreamRef.current = stream;
     setLocalStream(gotVideo ? stream : null);
@@ -214,157 +179,186 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
     setHasVideo(gotVideo);
     setAudioEnabled(gotAudio);
     setVideoEnabled(gotVideo);
-
-    const pc = createPC(pending.fromUserId);
-
-    // setRemoteDescription AVANT addTrack pour associer les tracks aux bons transceivers
-    console.log("[WebRTC] setRemoteDescription (offer)…");
-    await pc.setRemoteDescription({ type: "offer", sdp: pending.sdp });
-
-    for (const c of pendingCandidates.current) {
-      await pc.addIceCandidate(c).catch((e) => console.warn("[WebRTC] addIceCandidate:", e));
-    }
-    pendingCandidates.current = [];
-
-    stream.getTracks().forEach((t) => pc.addTrack(t, stream));
-
-    console.log("[WebRTC] createAnswer…");
-    const answer = await pc.createAnswer();
-    await pc.setLocalDescription(answer);
-    console.log("[WebRTC] Answer SDP (direction lines):", answer.sdp?.split("\n").filter(l => l.startsWith("m=") || l.includes("sendrecv") || l.includes("recvonly") || l.includes("sendonly")).join(" | "));
-
-    sendSignal("call-accept", pending.fromUserId, { sdp: answer.sdp });
     setStatus("in-call");
-  }, [createPC, sendSignal]);
+    setIncomingFrom(null);
+
+    // Annoncer sa présence — le serveur diffusera call:state_update à tous les membres
+    sendSignal("call-announce", null, { callerName: callerName ?? currentUserId });
+  }, [sendSignal, callerName, currentUserId]);
+
+  const startCall = joinCall; // alias pour la 1:1 (l'appelant "démarre" = rejoint)
+
+  const acceptCall = useCallback(() => {
+    void joinCall();
+  }, [joinCall]);
 
   const rejectCall = useCallback(() => {
-    const pending = pendingOfferRef.current;
-    if (pending) sendSignal("call-reject", pending.fromUserId, {});
-    cleanupRef.current();
-  }, [sendSignal]);
+    if (incomingFrom) sendSignal("call-reject", incomingFrom, {});
+    setIncomingFrom(null);
+  }, [incomingFrom, sendSignal]);
 
   const hangUp = useCallback(() => {
-    const target = remoteUserIdRef.current;
-    if (target) sendSignal("call-end", target, {});
+    // call-leave : diffusé à tous, les pairs retirent ce peer mais restent dans l'appel
+    sendSignal("call-leave", null, {});
     cleanupRef.current();
   }, [sendSignal]);
 
-  /**
-   * Mute/unmute le micro.
-   * Si le device n'est pas encore accordé, demande la permission et renégocie.
-   */
+  // ---- Toggles micro/caméra ----
   const toggleAudio = useCallback(async () => {
     if (!hasAudio) {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
         const track = s.getAudioTracks()[0];
         if (!track) return;
-        const stream = localStreamRef.current;
-        if (stream) stream.addTrack(track);
-        const pc = pcRef.current;
-        const target = remoteUserIdRef.current;
-        if (pc && stream && target && pc.signalingState === "stable") {
-          pc.addTrack(track, stream);
-          // Renégociation EXPLICITE — pas d'onnegotiationneeded
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          sendSignal("call-reoffer", target, { sdp: offer.sdp, sdpType: "offer" });
+        localStreamRef.current?.addTrack(track);
+        for (const [peerId, pc] of pcsRef.current.entries()) {
+          if (pc.signalingState === "stable") {
+            pc.addTrack(track, localStreamRef.current!);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            sendSignal("call-reoffer", peerId, { sdp: offer.sdp, sdpType: "offer" });
+          }
         }
         setHasAudio(true);
         setAudioEnabled(true);
-      } catch { /* refusé — rester inactif */ }
+      } catch { /* refusé */ }
       return;
     }
     localStreamRef.current?.getAudioTracks().forEach((t) => { t.enabled = !t.enabled; });
     setAudioEnabled((v) => !v);
   }, [hasAudio, sendSignal]);
 
-  /**
-   * Active/désactive la caméra.
-   * Si le device n'est pas encore accordé, demande la permission et renégocie.
-   */
   const toggleVideo = useCallback(async () => {
     if (!hasVideo) {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
         const track = s.getVideoTracks()[0];
         if (!track) return;
-        const stream = localStreamRef.current;
-        if (stream) stream.addTrack(track);
-        const pc = pcRef.current;
-        const target = remoteUserIdRef.current;
-        if (pc && stream && target && pc.signalingState === "stable") {
-          pc.addTrack(track, stream);
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          sendSignal("call-reoffer", target, { sdp: offer.sdp, sdpType: "offer" });
+        localStreamRef.current?.addTrack(track);
+        setLocalStream(new MediaStream(localStreamRef.current!.getTracks()));
+        for (const [peerId, pc] of pcsRef.current.entries()) {
+          if (pc.signalingState === "stable") {
+            pc.addTrack(track, localStreamRef.current!);
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            sendSignal("call-reoffer", peerId, { sdp: offer.sdp, sdpType: "offer" });
+          }
         }
         setHasVideo(true);
         setVideoEnabled(true);
-        setLocalStream(stream ?? null);
-      } catch { /* refusé — rester inactif */ }
+      } catch { /* refusé */ }
       return;
     }
     localStreamRef.current?.getVideoTracks().forEach((t) => { t.enabled = !t.enabled; });
     setVideoEnabled((v) => !v);
   }, [hasVideo, sendSignal]);
 
-  // ---- Reprendre une offre stockée globalement (appel reçu hors conversation) ----
+  // ---- Gestion call:state_update ----
   useEffect(() => {
-    const { incoming, setIncoming } = useCallStore.getState();
-    if (incoming && incoming.conversationId === conversationId) {
-      pendingOfferRef.current  = { sdp: incoming.sdp, fromUserId: incoming.fromUserId };
-      remoteUserIdRef.current  = incoming.fromUserId;
-      setRemoteUserId(incoming.fromUserId);
-      setStatus("incoming");
-      setIncoming(null);
-    }
+    return wsOn("call:state_update", (update) => {
+      if (update.conversationId !== conversationId) return;
+      setActiveParticipants(update.participants);
+
+      const { newcomer, callerName: newCallerName } = update;
+      if (!newcomer || newcomer === currentUserId) return;
+
+      // Si je suis dans l'appel et que quelqu'un vient d'arriver → je lui envoie une offre
+      if (statusRef.current === "in-call") {
+        const pc = createPC(newcomer);
+        addLocalTracks(pc);
+        void (async () => {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          console.log(`[WebRTC] Sending offer to newcomer ${newcomer}`);
+          sendSignal("call-request", newcomer, { sdp: offer.sdp, callerName: callerName ?? currentUserId });
+        })();
+        return;
+      }
+
+      // Sinon : afficher la notification d'appel entrant (conversations privées ou groupes)
+      const existing = useCallStore.getState().incoming;
+      if (!existing || existing.conversationId !== conversationId) {
+        useCallStore.getState().setIncoming({
+          conversationId,
+          fromUserId: newcomer,
+          callerName: newCallerName ?? newcomer,
+        });
+        setIncomingFrom(newcomer);
+      }
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // uniquement au montage
+  }, [wsOn, conversationId, currentUserId, createPC, sendSignal, callerName]);
 
-  // ---- WS signal handler ----
-
+  // ---- Gestion webrtc:signal ----
   useEffect(() => {
     const off = wsOn("webrtc:signal", (signal: SignalMessage) => {
       if (signal.conversationId !== conversationId) return;
       if (signal.toPeerId && signal.toPeerId !== currentUserId) return;
 
-      const handle = async () => {
+      void (async () => {
         switch (signal.type) {
+
+          // Offre entrante : auto-accepter si déjà dans l'appel, sinon UI entrante
           case "call-request": {
-            const { sdp } = signal.payload as { sdp: string; callerName?: string };
-            console.log("[WebRTC] Received call-request from", signal.fromPeerId);
-            pendingOfferRef.current = { sdp, fromUserId: signal.fromPeerId };
-            remoteUserIdRef.current = signal.fromPeerId;
-            setRemoteUserId(signal.fromPeerId);
-            setStatus("incoming");
+            const { sdp } = signal.payload as { sdp: string };
+            console.log(`[WebRTC] call-request from ${signal.fromPeerId}, status=${statusRef.current}`);
+
+            if (statusRef.current === "in-call") {
+              // Auto-accepter : on est déjà dans la salle
+              const pc = createPC(signal.fromPeerId);
+              addLocalTracks(pc);
+              await pc.setRemoteDescription({ type: "offer", sdp });
+              // Traiter les candidats en attente
+              for (const c of pendingCandidates.current.get(signal.fromPeerId) ?? []) {
+                await pc.addIceCandidate(c).catch(() => {});
+              }
+              pendingCandidates.current.delete(signal.fromPeerId);
+              const answer = await pc.createAnswer();
+              await pc.setLocalDescription(answer);
+              sendSignal("call-accept", signal.fromPeerId, { sdp: answer.sdp });
+            } else {
+              // Appel entrant 1:1 — afficher l'UI
+              setIncomingFrom(signal.fromPeerId);
+              useCallStore.getState().setIncoming({
+                conversationId,
+                fromUserId: signal.fromPeerId,
+                callerName: (signal.payload as { callerName?: string }).callerName ?? signal.fromPeerId,
+              });
+            }
             break;
           }
 
           case "call-accept": {
             const { sdp } = signal.payload as { sdp: string };
-            console.log("[WebRTC] Received call-accept, applying answer…");
-            const pc = pcRef.current;
+            const pc = pcsRef.current.get(signal.fromPeerId);
             if (!pc) break;
             await pc.setRemoteDescription({ type: "answer", sdp });
-            for (const c of pendingCandidates.current) {
-              await pc.addIceCandidate(c).catch((e) => console.warn("[WebRTC] addIceCandidate:", e));
+            for (const c of pendingCandidates.current.get(signal.fromPeerId) ?? []) {
+              await pc.addIceCandidate(c).catch(() => {});
             }
-            pendingCandidates.current = [];
-            setStatus("in-call");
+            pendingCandidates.current.delete(signal.fromPeerId);
             break;
           }
 
           case "call-reject":
+            setIncomingFrom(null);
+            useCallStore.getState().setIncoming(null);
+            if (pcsRef.current.size === 0) cleanupRef.current();
+            break;
+
           case "call-end":
             cleanupRef.current();
             break;
 
+          case "call-leave":
+            // Le pair quitte l'appel — on retire son PC, on reste dans l'appel
+            removePeer(signal.fromPeerId);
+            break;
+
           case "call-reoffer": {
             const { sdp, sdpType } = signal.payload as { sdp: string; sdpType: "offer" | "answer" };
-            const pc = pcRef.current;
+            const pc = pcsRef.current.get(signal.fromPeerId);
             if (!pc) break;
-            console.log("[WebRTC] Received call-reoffer, type:", sdpType);
             if (sdpType === "offer") {
               await pc.setRemoteDescription({ type: "offer", sdp });
               const answer = await pc.createAnswer();
@@ -378,38 +372,45 @@ export function useWebRTC(conversationId: string, currentUserId: string, callerN
 
           case "ice-candidate": {
             const init = signal.payload as RTCIceCandidateInit;
-            const pc = pcRef.current;
+            const pc   = pcsRef.current.get(signal.fromPeerId);
             if (pc?.remoteDescription) {
               await pc.addIceCandidate(init).catch(() => {});
             } else {
-              pendingCandidates.current.push(init);
+              const q = pendingCandidates.current.get(signal.fromPeerId) ?? [];
+              q.push(init);
+              pendingCandidates.current.set(signal.fromPeerId, q);
             }
             break;
           }
         }
-      };
-
-      void handle();
+      })();
     });
 
     return off;
-  }, [conversationId, currentUserId, wsOn, sendSignal]);
+  }, [conversationId, currentUserId, wsOn, sendSignal, createPC, removePeer]);
 
-  // Cleanup on unmount or conversation switch
+  // Cleanup on unmount / conversation switch
   useEffect(() => {
     return () => { cleanupRef.current(); };
   }, [conversationId]);
 
+  // ---- Valeurs dérivées (compat 1:1) ----
+  const firstPeerId   = [...remoteStreams.keys()][0]   ?? null;
+  const remoteStream  = firstPeerId ? (remoteStreams.get(firstPeerId) ?? null) : null;
+
   return {
     status,
+    incomingFrom,
     callError,
-    remoteUserId,
     localStream,
-    remoteStream,
+    remoteStream,        // premier stream distant (1:1 compat)
+    remoteStreams,       // Map complète (multi-party)
+    activeParticipants,
     audioEnabled,
     videoEnabled,
     hasAudio,
     hasVideo,
+    joinCall,
     startCall,
     acceptCall,
     rejectCall,

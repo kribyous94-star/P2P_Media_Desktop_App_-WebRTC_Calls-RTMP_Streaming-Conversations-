@@ -17,7 +17,8 @@ export type ClientEventType =
   | "rtmp:start"
   | "rtmp:chunk"
   | "rtmp:stop"
-  | "rtmp:status_request";
+  | "rtmp:status_request"
+  | "ping";
 
 // ---- Événements envoyés par le SERVEUR ----
 export type ServerEventType =
@@ -26,6 +27,7 @@ export type ServerEventType =
   | "chat:message"
   | "chat:history"
   | "webrtc:signal"
+  | "call:state_update"
   | "rtmp:state_update"
   | "conversation:added"
   | "conversation:member_joined"
@@ -56,6 +58,12 @@ export type ServerPayloadMap = {
   "chat:message": Message;
   "chat:history": { conversationId: string; messages: Message[] };
   "webrtc:signal": SignalMessage;
+  "call:state_update": {
+    conversationId: string;
+    participants:   string[];          // userIds actuellement dans l'appel
+    newcomer:       string | null;     // userId du dernier arrivant
+    callerName?:    string;            // displayName du newcomer
+  };
   "rtmp:state_update": RtmpState;
   "conversation:added": ConversationAddedPayload;
   "conversation:member_joined": { conversationId: string; userId: string; username: string };
