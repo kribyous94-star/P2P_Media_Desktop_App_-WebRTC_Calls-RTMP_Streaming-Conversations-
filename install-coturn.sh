@@ -363,7 +363,22 @@ fi
 # =============================================================================
 log_section "Mise à jour de apps/desktop/.env"
 
-TURN_URL_VALUE="turn:${TURN_REALM}:3478?transport=udp"
+# L'URL de connexion TURN doit être résolvable par les navigateurs clients.
+# Un realm comme "tariqa-rabaniyah" est un hostname local — inconnu hors du serveur.
+# Règle : si le realm est un vrai FQDN (contient un point + TLD), on l'utilise ;
+#         sinon on utilise l'IP publique qui est toujours résolvable.
+is_fqdn() { echo "$1" | grep -qE '^[a-zA-Z0-9][a-zA-Z0-9._-]+\.[a-zA-Z]{2,}$'; }
+
+if is_fqdn "$TURN_REALM"; then
+  TURN_CONNECT_HOST="$TURN_REALM"
+else
+  TURN_CONNECT_HOST="$PUBLIC_IP"
+  if [[ "$TURN_REALM" != "$PUBLIC_IP" ]]; then
+    log_warn "Realm \"$TURN_REALM\" n'est pas un FQDN → l'IP publique ($PUBLIC_IP) sera utilisée dans VITE_TURN_URL"
+  fi
+fi
+
+TURN_URL_VALUE="turn:${TURN_CONNECT_HOST}:3478?transport=udp"
 
 update_env_var() {
   local key="$1" value="$2" file="$3"
@@ -399,10 +414,10 @@ echo -e "  ${YELLOW}VITE_TURN_USERNAME${NC}   = $TURN_USER"
 echo -e "  ${YELLOW}VITE_TURN_CREDENTIAL${NC} = $TURN_CRED"
 echo
 
-# Avertissement DNS si domaine personnalisé
-if echo "$TURN_REALM" | grep -qE '[a-zA-Z]' && [[ "$TURN_REALM" != "$PUBLIC_IP" ]]; then
+# Avertissement DNS uniquement si le FQDN est utilisé et diffère de l'IP
+if is_fqdn "$TURN_CONNECT_HOST" && [[ "$TURN_CONNECT_HOST" != "$PUBLIC_IP" ]]; then
   echo -e "${YELLOW}${BOLD}Important — DNS :${NC}"
-  echo -e "  Vérifiez que ${CYAN}$TURN_REALM${NC} pointe vers ${CYAN}$PUBLIC_IP${NC}"
+  echo -e "  Vérifiez que ${CYAN}$TURN_CONNECT_HOST${NC} pointe vers ${CYAN}$PUBLIC_IP${NC}"
   echo -e "  ${DIM}(enregistrement A dans votre gestionnaire DNS)${NC}"
   echo
 fi
@@ -415,7 +430,7 @@ echo -e "     Ouvrir cette page dans un navigateur :"
 echo -e "     ${BLUE}https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/${NC}"
 echo
 echo -e "     Remplir le formulaire :"
-echo -e "       ${DIM}STUN or TURN URI${NC}  →  ${CYAN}turn:$TURN_REALM:3478${NC}"
+echo -e "       ${DIM}STUN or TURN URI${NC}  →  ${CYAN}turn:$TURN_CONNECT_HOST:3478${NC}"
 echo -e "       ${DIM}TURN username${NC}     →  ${CYAN}$TURN_USER${NC}"
 echo -e "       ${DIM}TURN password${NC}     →  ${CYAN}$TURN_CRED${NC}"
 echo -e "     Cliquer ${BOLD}\"Add Server\"${NC} puis ${BOLD}\"Gather candidates\"${NC}."
