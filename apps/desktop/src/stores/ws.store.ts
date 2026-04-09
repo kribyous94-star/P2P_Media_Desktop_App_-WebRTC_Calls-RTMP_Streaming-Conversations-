@@ -43,12 +43,13 @@ export const useWsStore = create<WsState>()((set, get) => ({
     // Annuler toute reconnexion en attente
     const prev = get();
     if (prev._reconnectTimer) clearTimeout(prev._reconnectTimer);
-    // Fermer le socket existant sans déclencher de reconnexion
+    if (prev._heartbeatTimer) clearInterval(prev._heartbeatTimer);
+    // Neutraliser l'ancien socket sans déclencher la logique de reconnexion
     if (prev.socket) {
-      set({ _intentionalClose: true });
+      prev.socket.onclose = null;
+      prev.socket.onerror = null;
       prev.socket.close();
     }
-    if (prev._heartbeatTimer) clearInterval(prev._heartbeatTimer);
 
     set({ status: "connecting", _url: url, _token: token, _intentionalClose: false });
 

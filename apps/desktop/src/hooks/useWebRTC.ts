@@ -5,10 +5,19 @@ import type { SignalMessage, SignalType } from "@p2p/shared";
 
 export type CallStatus = "idle" | "in-call";
 
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-];
+const ICE_SERVERS: RTCIceServer[] = (() => {
+  const servers: RTCIceServer[] = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+  ];
+  const turnUrl  = import.meta.env["VITE_TURN_URL"]        as string | undefined;
+  const turnUser = import.meta.env["VITE_TURN_USERNAME"]   as string | undefined;
+  const turnCred = import.meta.env["VITE_TURN_CREDENTIAL"] as string | undefined;
+  if (turnUrl && turnUser && turnCred) {
+    servers.push({ urls: turnUrl, username: turnUser, credential: turnCred });
+  }
+  return servers;
+})();
 
 interface MediaResult {
   stream:   MediaStream;
@@ -132,7 +141,9 @@ export function useWebRTC(
 
     pc.onconnectionstatechange = () => {
       console.log(`[WebRTC] ${remoteUserId} connection:`, pc.connectionState);
-      if (["disconnected", "failed", "closed"].includes(pc.connectionState)) {
+      // "disconnected" est transitoire — le navigateur peut récupérer tout seul.
+      // On ne retire le pair que sur un échec définitif ("failed") ou fermeture ("closed").
+      if (pc.connectionState === "failed" || pc.connectionState === "closed") {
         removePeer(remoteUserId);
       }
     };
