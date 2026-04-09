@@ -159,4 +159,82 @@
     height: 42px;
     font-size: 1.1rem;
   }
+
+  /* ── Mode overlay TikTok (par-dessus la vidéo) ────────────────────────── */
+
+  /* Panneau positionné en absolu sur la partie basse de l'écran */
+  .panelOverlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 45%;
+    z-index: 10;
+    background: transparent;
+    /* Les touches sur la liste passent à travers vers la vidéo */
+    pointer-events: none;
+  }
+
+  /* La liste est transparente avec un dégradé du bas pour lisibilité */
+  .listOverlay {
+    background: linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(0, 0, 0, 0.18) 40%,
+      rgba(0, 0, 0, 0.55) 100%
+    );
+    padding: 0.5rem 0.875rem 0.25rem;
+    mask-image: linear-gradient(to bottom, transparent 0%, black 30%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 30%);
+  }
+
+  /* Bulles des autres : semi-transparentes sur fond vidéo */
+  .panelOverlay .text {
+    background: rgba(0, 0, 0, 0.42);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
+
+  /* Bulles propres : violet semi-transparent */
+  .panelOverlay .msgGroup.own .text {
+    background: rgba(108, 99, 255, 0.55);
+    border-color: rgba(108, 99, 255, 0.25);
+  }
+
+  /* Auteur et horodatage lisibles sur fond vidéo */
+  .panelOverlay .author {
+    color: rgba(255, 255, 255, 0.75);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  }
+
+  .panelOverlay .time {
+    color: rgba(255, 255, 255, 0.45);
+  }
+
+  /* La barre d'input intercepte les touches (contrairement au reste du panneau) */
+  .inputBarOverlay {
+    background: rgba(10, 10, 16, 0.82);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    pointer-events: all;
+    padding: 0.5rem 0.875rem;
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Champ texte adapté au fond sombre */
+  .inputBarOverlay .input {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: #fff;
+  }
+  .inputBarOverlay .input::placeholder {
+    color: rgba(255, 255, 255, 0.45);
+  }
+  .inputBarOverlay .input:focus {
+    border-color: var(--color-primary);
+  }
 }

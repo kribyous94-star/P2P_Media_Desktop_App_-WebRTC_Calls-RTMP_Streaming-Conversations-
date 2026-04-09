@@ -8,9 +8,10 @@ import styles from "./ChatPanel.module.css";
 
 interface Props {
   conversationId: string;
+  overlay?:       boolean; // mode TikTok : chat par-dessus la vidéo sur mobile
 }
 
-export default function ChatPanel({ conversationId }: Props) {
+export default function ChatPanel({ conversationId, overlay = false }: Props) {
   const { byConversation, hasMore, isLoading, fetchMessages, appendMessage } = useMessageStore();
   const wsOn   = useWsStore((s) => s.on);
   const user   = useAuthStore((s) => s.user);
@@ -86,8 +87,8 @@ export default function ChatPanel({ conversationId }: Props) {
   };
 
   return (
-    <div className={styles.panel}>
-      <div className={styles.list} ref={listRef}>
+    <div className={`${styles.panel} ${overlay ? styles.panelOverlay : ""}`}>
+      <div className={`${styles.list} ${overlay ? styles.listOverlay : ""}`} ref={listRef}>
         {more && (
           <button className={styles.loadMore} onClick={loadMore} disabled={loading}>
             {loading ? "Chargement…" : "Charger les messages précédents"}
@@ -121,7 +122,7 @@ export default function ChatPanel({ conversationId }: Props) {
         <div ref={bottomRef} />
       </div>
 
-      <div className={styles.inputBar}>
+      <div className={`${styles.inputBar} ${overlay ? styles.inputBarOverlay : ""}`}>
         <textarea
           className={styles.input}
           value={input}

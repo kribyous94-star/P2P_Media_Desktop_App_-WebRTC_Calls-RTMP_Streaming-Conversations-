@@ -221,4 +221,29 @@
     align-items: center;
     justify-content: center;
   }
+
+  /* ── Mode TikTok : appel en plein écran ────────────────────────────────── */
+
+  /* Masquer le header quand l'appel est actif (plein écran vidéo) */
+  .headerCallHidden {
+    display: none;
+  }
+
+  /* body et main deviennent des conteneurs de référence pour le positionnement absolu */
+  .bodyInCall {
+    flex-direction: row; /* remettre en row pour que main prenne toute la hauteur */
+    position: relative;
+  }
+
+  .mainInCall {
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Le wrapper d'appel prend tout l'espace disponible en absolu */
+  .callWrapperFull {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
 }

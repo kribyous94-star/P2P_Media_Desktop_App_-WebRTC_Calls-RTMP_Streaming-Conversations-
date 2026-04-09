@@ -72,6 +72,8 @@ export default function ConversationView() {
   const { conversations, activeId, setActive } = useConversationStore();
   const currentUser = useAuthStore((s) => s.user);
   const [showMembers, setShowMembers] = useState(false);
+  // Vrai quand l'utilisateur est dans un appel actif — active le mode TikTok sur mobile
+  const [isInCall, setIsInCall] = useState(false);
 
   useEffect(() => {
     if (id && id !== activeId) setActive(id);
@@ -90,7 +92,8 @@ export default function ConversationView() {
 
   return (
     <div className={styles.view}>
-      <div className={styles.header}>
+      {/* Header — masqué sur mobile quand l'appel est en plein écran */}
+      <div className={`${styles.header} ${isInCall ? styles.headerCallHidden : ""}`}>
         <span className={styles.typeIcon}>
           {{ private: "🔒", group: "👥", media_room: "🎬" }[conv.type] ?? "💬"}
         </span>
@@ -106,26 +109,30 @@ export default function ConversationView() {
         </button>
       </div>
 
-      <div className={styles.body}>
-        <div className={styles.main}>
+      <div className={`${styles.body} ${isInCall ? styles.bodyInCall : ""}`}>
+        <div className={`${styles.main} ${isInCall ? styles.mainInCall : ""}`}>
           {/* Phase 5 : WebRTC — appels 1:1 (private + media_room) */}
           {(conv.type === "private" || conv.type === "media_room") && (
-            <div className={styles.callWrapper}>
-              <CallPanel conversationId={conv.id} conversationName={conv.name} />
+            <div className={`${styles.callWrapper} ${isInCall ? styles.callWrapperFull : ""}`}>
+              <CallPanel
+                conversationId={conv.id}
+                conversationName={conv.name}
+                onStatusChange={setIsInCall}
+              />
             </div>
           )}
 
           {/* Phase 4 : Chat texte */}
-          <ChatPanel conversationId={conv.id} />
+          <ChatPanel conversationId={conv.id} overlay={isInCall} />
 
           {/* Phase 7 : RTMP — streaming vers Twitch, YouTube, etc. */}
-          {conv.type === "media_room" && (
+          {conv.type === "media_room" && !isInCall && (
             <RtmpPanel conversationId={conv.id} />
           )}
         </div>
 
         {/* Phase 6 : Panneau membres */}
-        {showMembers && currentUser && (
+        {showMembers && currentUser && !isInCall && (
           <MembersPanel
             conversationId={conv.id}
             currentUserId={currentUser.id}

@@ -7,6 +7,7 @@ import styles from "./CallPanel.module.css";
 interface Props {
   conversationId:   string;
   conversationName: string;
+  onStatusChange?:  (inCall: boolean) => void;
 }
 
 /** Composant de rendu d'un flux vidéo distant. */
@@ -37,7 +38,7 @@ function PeerVideo({
   );
 }
 
-export default function CallPanel({ conversationId, conversationName }: Props) {
+export default function CallPanel({ conversationId, conversationName, onStatusChange }: Props) {
   const currentUser = useAuthStore((s) => s.user);
   const wsOn        = useWsStore((s) => s.on);
 
@@ -70,6 +71,11 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
       void video.play().catch(() => {});
     }
   }, [localStream, status]);
+
+  // Notifier le parent du changement d'état (active le mode TikTok dans ConversationView)
+  useEffect(() => {
+    onStatusChange?.(status === "in-call");
+  }, [status, onStatusChange]);
 
   // Nettoyer l'indicateur global d'appel entrant quand on monte sur la bonne conversation
   useEffect(() => {
@@ -106,7 +112,7 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
     const alone         = remoteEntries.length === 0;
 
     return (
-      <div className={styles.callView}>
+      <div className={`${styles.callView} ${styles.callViewFull}`}>
         {/* Grille vidéos distantes */}
         <div className={`${styles.remoteGrid} ${alone ? styles.remoteGridAlone : ""}`}>
           {alone ? (
@@ -123,7 +129,7 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
 
         {/* Vidéo locale PiP */}
         {hasVideo && localStream && (
-          <video ref={localVideoRef} autoPlay playsInline muted className={styles.localVideo} />
+          <video ref={localVideoRef} autoPlay playsInline muted className={`${styles.localVideo} ${styles.localVideoFull}`} />
         )}
 
         {/* Indicateurs médias indisponibles */}
@@ -132,28 +138,28 @@ export default function CallPanel({ conversationId, conversationName }: Props) {
           {!hasVideo && <span className={styles.indicatorBadge} title="Caméra indisponible">📷✕</span>}
         </div>
 
-        {/* Contrôles */}
-        <div className={styles.controls}>
+        {/* Contrôles — colonne verticale à droite sur mobile (style TikTok) */}
+        <div className={`${styles.controls} ${styles.controlsFull}`}>
           <button
-            className={`${styles.ctrlBtn} ${!hasAudio ? styles.ctrlNoDevice : !audioEnabled ? styles.ctrlOff : ""}`}
+            className={`${styles.ctrlBtn} ${styles.ctrlBtnFull} ${!hasAudio ? styles.ctrlNoDevice : !audioEnabled ? styles.ctrlOff : ""}`}
             onClick={() => void toggleAudio()}
             title={audioTitle}
           >
             {hasAudio ? (audioEnabled ? "🎙️" : "🔇") : "🎙️"}
           </button>
           <button
-            className={`${styles.ctrlBtn} ${!hasVideo ? styles.ctrlNoDevice : !videoEnabled ? styles.ctrlOff : ""}`}
+            className={`${styles.ctrlBtn} ${styles.ctrlBtnFull} ${!hasVideo ? styles.ctrlNoDevice : !videoEnabled ? styles.ctrlOff : ""}`}
             onClick={() => void toggleVideo()}
             title={videoTitle}
           >
             {hasVideo ? (videoEnabled ? "📷" : "📵") : "📷"}
           </button>
           <button
-            className={`${styles.ctrlBtn} ${styles.hangUpBtn}`}
+            className={`${styles.ctrlBtn} ${styles.ctrlBtnFull} ${styles.hangUpBtn}`}
             onClick={hangUp}
             title="Raccrocher"
           >
-            📵 Raccrocher
+            📵
           </button>
         </div>
       </div>
