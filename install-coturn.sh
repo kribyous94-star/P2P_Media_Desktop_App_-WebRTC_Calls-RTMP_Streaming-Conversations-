@@ -408,10 +408,29 @@ if echo "$TURN_REALM" | grep -qE '[a-zA-Z]' && [[ "$TURN_REALM" != "$PUBLIC_IP" 
 fi
 
 echo -e "${BOLD}Étapes suivantes :${NC}"
-echo -e "  1. Rebuilder l'app desktop :"
-echo -e "     ${BLUE}npm run build -w apps/desktop${NC}"
-echo -e "  2. Tester le serveur TURN :"
+echo
+echo -e "  ${BOLD}1. Tester le serveur TURN (avant de rebuilder)${NC}"
+echo -e "     Le test vérifie que coturn est joignable depuis Internet."
+echo -e "     Ouvrir cette page dans un navigateur :"
 echo -e "     ${BLUE}https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/${NC}"
-echo -e "     ${DIM}URI : turn:$TURN_REALM:3478  user : $TURN_USER  cred : $TURN_CRED${NC}"
+echo
+echo -e "     Remplir le formulaire :"
+echo -e "       ${DIM}STUN or TURN URI${NC}  →  ${CYAN}turn:$TURN_REALM:3478${NC}"
+echo -e "       ${DIM}TURN username${NC}     →  ${CYAN}$TURN_USER${NC}"
+echo -e "       ${DIM}TURN password${NC}     →  ${CYAN}$TURN_CRED${NC}"
+echo -e "     Cliquer ${BOLD}\"Add Server\"${NC} puis ${BOLD}\"Gather candidates\"${NC}."
+echo
+echo -e "     Lire les résultats :"
+echo -e "       ${GREEN}relay${NC}  → TURN fonctionne  ${GREEN}✓${NC}  (candidat relayé par votre serveur)"
+echo -e "       ${DIM}srflx${NC}  → STUN seul (IP publique visible, pas de relay)"
+echo -e "       ${DIM}host${NC}   → réseau local uniquement"
+echo -e "     ${YELLOW}Si aucun candidat \"relay\" n'apparaît :${NC}"
+echo -e "       • Vérifier le pare-feu : port 3478 UDP et TCP ouvert ?"
+echo -e "       • Vérifier le service  : ${BLUE}systemctl status coturn${NC}"
+echo -e "       • Consulter les logs   : ${BLUE}journalctl -u coturn -n 50${NC}"
+echo
+echo -e "  ${BOLD}2. Rebuilder l'app desktop (une fois le TURN validé)${NC}"
+echo -e "     ${BLUE}npm run build -w apps/desktop${NC}"
+echo -e "     ${DIM}(les variables VITE_TURN_* sont maintenant dans apps/desktop/.env)${NC}"
 echo
 log_ok "Terminé."
