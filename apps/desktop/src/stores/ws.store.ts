@@ -40,8 +40,18 @@ export const useWsStore = create<WsState>()((set, get) => ({
   _heartbeatTimer:   null,
 
   connect: (url, token) => {
-    // Annuler toute reconnexion en attente
     const prev = get();
+
+    // Guard : si un socket est déjà en cours de connexion, ne pas en créer un 2ème.
+    // Sans ce guard, plusieurs appels rapides (onRehydrateStorage + rendu React)
+    // créent une cascade : chaque connect() tue le précédent, dont le onclose
+    // programme un timer qui relance connect() 3 s plus tard → boucle.
+    if (prev.socket?.readyState === WebSocket.CONNECTING) {
+      console.log("[WS] Connexion déjà en cours — ignoré");
+      return;
+    }
+
+    // Annuler toute reconnexion en attente
     if (prev._reconnectTimer) clearTimeout(prev._reconnectTimer);
     if (prev._heartbeatTimer) clearInterval(prev._heartbeatTimer);
     // Neutraliser l'ancien socket sans déclencher la logique de reconnexion
@@ -78,7 +88,12 @@ export const useWsStore = create<WsState>()((set, get) => ({
       set({ status: "error" });
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event: CloseEvent) => {
+      // Log du code de fermeture pour diagnostiquer les déconnexions inattendues
+      // Codes courants : 1000=normal, 1006=réseau, 4001=auth refusée par le serveur
+      if (!get()._intentionalClose) {
+        console.warn(`[WS] Connexion fermée — code: ${event.code}${event.reason ? `, raison: ${event.reason}` : ""}`);
+      }
       const { _heartbeatTimer, _intentionalClose, _url, _token } = get();
       if (_heartbeatTimer) clearInterval(_heartbeatTimer);
       set({ status: "disconnected", socket: null, _heartbeatTimer: null });
