@@ -46,10 +46,10 @@ sudo apt install -y \
 
 > Sur Ubuntu < 22.04 : remplacer `libayatana-appindicator3-dev` par `libappindicator3-dev`
 
-### Node.js 20+
+### Node.js 24.22.1+ (ou 22.23.4+)
 ```bash
-# Via nvm (recommandé)
-nvm install 20 && nvm use 20
+# Via nvm (recommandé) : version fixée dans .nvmrc, corrige CVE-2026-111497
+nvm install && nvm use
 ```
 
 ## Installation
